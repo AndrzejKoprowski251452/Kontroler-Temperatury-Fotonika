@@ -10,7 +10,7 @@ import numpy as np
 data = [1]
 sent_data_value = 50
 time_start = time.time()
-settings = {"sent_data_value":50,"pid1":[1,1,1],"pid2":[1,1,0,0,1,0]}
+settings = {"sent_data_value":50,"pid1":[1,1,1],"pid2":[1,1,0,0,1,0],"pid3":[0,0,0]}
 stabilize = False
 def lerp(x1: float, y1: float, x: float):
     return float(str(x1+((y1-x1)*x))[:5])
@@ -33,32 +33,6 @@ def update_graph():
         stabilize = True
         messagebox.showinfo(title="Complite",message="Temperatura ustabiliziowana")
         
-def update_options(n):
-    global pid_temp,pid_current
-    a = ""
-    if n == 0:
-        BAUDRATE = Canvas(options,width=70,height=40)
-        BAUDRATE.create_rectangle(0,0,70,40,fill='black')
-        for i in range(1,4):
-            BAUDRATE.create_rectangle(10+20*(i-1),10,20*i,30,fill='grey')
-            BAUDRATE.create_text(15+20*(i-1),35,text=f"{i}",fill="white", font=('Helvetica 8 bold'))
-            BAUDRATE.create_rectangle(10+20*(i-1),20-(10*pid1[i-1]["on"]),20*i,30-(10*pid1[i-1]["on"]),fill='white')  
-            BAUDRATE.bind('<Button>', clicked1)
-            a += str(pid1[(i-1)]["on"])
-        BAUDRATE.grid(row=0, column=0, padx=5, pady=5, sticky="nsew")
-        pid_temp.config(text=f"Port: {str((2**int(a,2))*1200)}")
-    else:
-        MAX_CURRENT = Canvas(options,width=130,height=40)
-        MAX_CURRENT.create_rectangle(0,0,130,40,fill='black')
-        for i in range(1,7):
-            MAX_CURRENT.create_rectangle(10+20*(i-1),10,20*i,30,fill='grey')
-            MAX_CURRENT.create_text(15+20*(i-1),35,text=f"{i}",fill="white", font=('Helvetica 8 bold'))
-            MAX_CURRENT.create_rectangle(10+20*(i-1),20-(10*pid2[(i-1)]["on"]),20*i,30-(10*pid2[(i-1)]["on"]),fill='white')  
-            MAX_CURRENT.bind('<Button>', clicked2)
-            a += str(pid2[(i-1)]["on"])
-        MAX_CURRENT.grid(row=0, column=3, padx=5, pady=5, sticky="nsew")
-        pid_current.config(text=f"Current: {str(int(a,2)*0.1)[:4]}A")
-
 def send_serial_data():
     global sent_data_value,stabilize
     sent_data_value = float(entry.get())  
@@ -77,8 +51,9 @@ def on_closing():
     if answer == "yes":
         data_dict = {
             "data": data,
-            "pid1": pid1,
-            "pid2": pid2,
+            "pid1": pid[0],
+            "pid2": pid[1],
+            "pid3": pid[2],
             "sent_data_value": sent_data_value,
             "time":float(str(time.time()-time_start)[:4])
         }
@@ -96,25 +71,6 @@ def on_closing():
         with open(json_path, "w") as json_file:
             json.dump(data_dict, json_file)
     window.destroy()
-    
-def clicked1(event):
-    for i in pid1:
-        if i["x1"] <= event.x <= i["x2"]:
-            if i["y1"] <= event.y <= i["y2"]:
-                if i["on"] == 1:
-                    i["on"] = 0
-                else:
-                    i["on"] = 1
-    update_options(0)
-def clicked2(event):
-    for i in pid2:
-        if i["x1"] <= event.x <= i["x2"]:
-            if i["y1"] <= event.y <= i["y2"]:
-                if i["on"] == 1:
-                    i["on"] = 0
-                else:
-                    i["on"] = 1
-    update_options(1)
 
 window = Tk()
 window.title("Kontroler Temperatury")
@@ -151,23 +107,11 @@ stabilization_time.grid(row=0,column=2,sticky="ne")
 for widget in data_panel.winfo_children():
     widget.grid_configure(padx=5, pady=5)
     
-pid1 = []
-pid2 = []
-for i in range(3):
-    b = {'x1':10+20*i,'y1':10,'x2':20*(i+1),'y2':30,'on':settings["pid1"][i]}
-    pid1.append(b)
+choices = ['GB', 'MB', 'KB']
+variable = StringVar(options)
+variable.set('GB')
 
-for i in range(6):
-    b = {'x1':10+20*i,'y1':10,'x2':20*(i+1),'y2':30,'on':settings["pid2"][i]}
-    pid2.append(b)
-    
-pid_current = Label(options,text="Current:")
-pid_current.grid(row=0,column=4)
-pid_temp = Label(options,text="Port: ")
-pid_temp.grid(row=0,column=1)
-
-update_options(0)
-update_options(1)
+w = OptionMenu(options, variable, *choices)
 
 fig = Figure(figsize=(5, 5), dpi = 100)
 fig.patch.set_facecolor('#F0F0F0')
