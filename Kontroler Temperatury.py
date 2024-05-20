@@ -1,11 +1,11 @@
 from tkinter import *
 from tkinter import messagebox
 from matplotlib.figure import Figure
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 import os
 import time
 import json
-import numpy as np
+import serial
 
 data = [1]
 sent_data_value = 50
@@ -25,14 +25,14 @@ def update_graph():
     last_data_text.set_position((len(data)-1,data[-1]))
     last_data_text.set_text(f"{data[-1]}")
     last_data_label.config(text=f"Current Temp. : {data[-1]}")
-    stabilization_time.config(text=f"Time : {str(time.time()-time_start)[:5]}")
+    measure_time.config(text=f"Time : {str(time.time()-time_start)[:5]}")
     canvas.draw()
     global stabilize
     if abs(data[-1]-sent_data_value) < 0.1 and not stabilize:
-        global measure
         stabilize = True
-        messagebox.showinfo(title="Complite",message="Temperatura ustabiliziowana")
+        #messagebox.showinfo(title="Complite",message="Temperatura ustabiliziowana")
 def update_options():
+    global current
     a = ""
     MAX_CURRENT = Canvas(options,width=130,height=40)
     MAX_CURRENT.create_rectangle(0,0,130,40,fill='black')
@@ -43,15 +43,17 @@ def update_options():
         MAX_CURRENT.bind('<Button>', clicked)
         a += str(pid[i]["on"])
     MAX_CURRENT.grid(row=0, column=3, padx=5, pady=5, sticky="nsew")
-    t = Label(options,text=f'Current: {str(int(a,2)*0.1)[:4]}A')
-    t.grid(row=0,column=4)
+    current.set(str(int(a,2)*0.1)[:4])
+    currentValue.config(text=f'Current: {current.get()}A')
         
 def send_serial_data():
-    global sent_data_value,stabilize
-    sent_data_value = float(entry.get())  
+    global sent_data_value,stabilize,port
+    sent_data_value = float(entry.get())
     sent_data_line.set_ydata([sent_data_value])
     set_data_label.config(text=f"Set Temp. : {sent_data_value}")
     stabilize = False
+    update_graph()
+    serial.Serial(port=port.get())
     entry.delete(0,len(str(sent_data_value)))
     
 def validate_entry(new_value):
@@ -64,9 +66,9 @@ def on_closing():
     if answer == "yes":
         data_dict = {
             "data": data,
-            "pid_port": pid_port,
-            "pid_current": pid,
-            "pid_temp": pid_temp,
+            "pid_port": port.get(),
+            "pid_current": current.get(),
+            "pid_temp": temp.get(),
             "sent_data_value": sent_data_value,
             "time":float(str(time.time()-time_start)[:4])
         }
@@ -84,14 +86,11 @@ def on_closing():
         with open(json_path, "w") as json_file:
             json.dump(data_dict, json_file)
     window.destroy()
+    
 def clicked(event):
     for i in pid:
-        if i["x1"] <= event.x <= i["x2"]:
-            if i["y1"] <= event.y <= i["y2"]:
-                if i["on"] == 1:
-                    i["on"] = 0
-                else:
-                    i["on"] = 1
+        if i["x1"] <= event.x <= i["x2"] and i["y1"] <= event.y <= i["y2"]:
+            i["on"] = int(not bool(i['on']))
     update_options()
 
 window = Tk()
@@ -123,8 +122,8 @@ last_data_label.grid(row=0,column=1)
 set_data_label = Label(data_panel, text=f"Set Temp. : {sent_data_value}")
 set_data_label.grid(row=1,column=1)
 
-stabilization_time = Label(data_panel, text=f"Time : {str(time.time()-time_start)[:5]}")
-stabilization_time.grid(row=0,column=2,sticky="ne")
+measure_time = Label(data_panel, text=f"Time : {str(time.time()-time_start)[:5]}")
+measure_time.grid(row=0,column=2,sticky="ne")
 
 for widget in data_panel.winfo_children():
     widget.grid_configure(padx=5, pady=5)
@@ -133,20 +132,32 @@ pid = []
 for i in range(1,7):
     b = {'x1':10+20*(i-1),'y1':10,'x2':20*i,'y2':30,'on':0}
     pid.append(b)
+currentValue = Label(options,text=f'Current: 0.0A')
+currentValue.grid(row=0,column=4)
+port_choice = ['1200','2400','4800','9600','19200','38400','57600','115200']
+port = StringVar(options)
+port.set('1200')
+portMenu = OptionMenu(options, port, *port_choice)
+portMenu.grid(row=0,column=0)
+
+tempRange_choice = ['-10 /+50','-10 /+100','-100 /+10','-50 /+50','+15 /+30','+30 /+45','+45 /+60','-100 /+250']
+temp = StringVar(options)
+temp.set('-10 /+50')
+tempMenu = OptionMenu(options, temp, *tempRange_choice)
+tempMenu.grid(row=0,column=1)
+
+current_choice = [0.1,0.2,0.4,0.8,1.6,3.2]
+for i in current_choice.copy():
+    for j in current_choice.copy():
+        if(i != j and float(str(i+j)[:4]) not in current_choice):
+            current_choice.append(float(str(i+j)[:4]))
+current_choice.sort()
+current = StringVar(options)
+current.set('0.1')
+current.trace_add("write",lambda v,i,m:currentValue.config(text=f'Current: {current.get()}A'))
+currentMenu = OptionMenu(options, current, *current_choice)
+currentMenu.grid(row=0,column=5)
 update_options()
-pid_port = ['1200','2400','4800','9600','19200','38400','57600','115200']
-variable = StringVar(options)
-variable.set('Port')
-
-port = OptionMenu(options, variable, *pid_port)
-port.grid(row=0,column=0)
-
-pid_temp = ['-10 - +50','-10 - +100','-100 - +10','-50 - +50','+15 - +30','+30 - +45','+45 - +60','-100 - +250']
-variable = StringVar(options)
-variable.set('Temp. Range')
-
-temp = OptionMenu(options, variable, *pid_temp)
-temp.grid(row=0,column=1)
 
 for widget in options.winfo_children():
     widget.grid_configure(padx=5, pady=5)
