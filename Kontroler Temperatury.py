@@ -32,6 +32,19 @@ def update_graph():
         global measure
         stabilize = True
         messagebox.showinfo(title="Complite",message="Temperatura ustabiliziowana")
+def update_options():
+    a = ""
+    MAX_CURRENT = Canvas(options,width=130,height=40)
+    MAX_CURRENT.create_rectangle(0,0,130,40,fill='black')
+    for i in range(6):
+        MAX_CURRENT.create_rectangle(10+20*i,10,20*(i+1),30,fill='grey')
+        MAX_CURRENT.create_text(15+20*i,35,text=f"{i+1}",fill="white", font=('Helvetica 8 bold'))
+        MAX_CURRENT.create_rectangle(10+20*i,20-(10*pid[i]["on"]),20*(i+1),30-(10*pid[i]["on"]),fill='white')  
+        MAX_CURRENT.bind('<Button>', clicked)
+        a += str(pid[i]["on"])
+    MAX_CURRENT.grid(row=0, column=3, padx=5, pady=5, sticky="nsew")
+    t = Label(options,text=f'Current: {str(int(a,2)*0.1)[:4]}A')
+    t.grid(row=0,column=4)
         
 def send_serial_data():
     global sent_data_value,stabilize
@@ -51,9 +64,9 @@ def on_closing():
     if answer == "yes":
         data_dict = {
             "data": data,
-            "pid1": pid[0],
-            "pid2": pid[1],
-            "pid3": pid[2],
+            "pid_port": pid_port,
+            "pid_current": pid,
+            "pid_temp": pid_temp,
             "sent_data_value": sent_data_value,
             "time":float(str(time.time()-time_start)[:4])
         }
@@ -71,6 +84,15 @@ def on_closing():
         with open(json_path, "w") as json_file:
             json.dump(data_dict, json_file)
     window.destroy()
+def clicked(event):
+    for i in pid:
+        if i["x1"] <= event.x <= i["x2"]:
+            if i["y1"] <= event.y <= i["y2"]:
+                if i["on"] == 1:
+                    i["on"] = 0
+                else:
+                    i["on"] = 1
+    update_options()
 
 window = Tk()
 window.title("Kontroler Temperatury")
@@ -107,11 +129,27 @@ stabilization_time.grid(row=0,column=2,sticky="ne")
 for widget in data_panel.winfo_children():
     widget.grid_configure(padx=5, pady=5)
     
-choices = ['GB', 'MB', 'KB']
+pid = []
+for i in range(1,7):
+    b = {'x1':10+20*(i-1),'y1':10,'x2':20*i,'y2':30,'on':0}
+    pid.append(b)
+update_options()
+pid_port = ['1200','2400','4800','9600','19200','38400','57600','115200']
 variable = StringVar(options)
-variable.set('GB')
+variable.set('Port')
 
-w = OptionMenu(options, variable, *choices)
+port = OptionMenu(options, variable, *pid_port)
+port.grid(row=0,column=0)
+
+pid_temp = ['-10 - +50','-10 - +100','-100 - +10','-50 - +50','+15 - +30','+30 - +45','+45 - +60','-100 - +250']
+variable = StringVar(options)
+variable.set('Temp. Range')
+
+temp = OptionMenu(options, variable, *pid_temp)
+temp.grid(row=0,column=1)
+
+for widget in options.winfo_children():
+    widget.grid_configure(padx=5, pady=5)
 
 fig = Figure(figsize=(5, 5), dpi = 100)
 fig.patch.set_facecolor('#F0F0F0')
