@@ -10,7 +10,7 @@ import serial
 data = [1]
 sent_data_value = 50
 time_start = time.time()
-settings = {"sent_data_value":50,"pid1":[1,1,1],"pid2":[1,1,0,0,1,0],"pid3":[0,0,0]}
+timev = float(str(time.time()-time_start)[:5])
 stabilize = False
 def lerp(x1: float, y1: float, x: float):
     return float(str(x1+((y1-x1)*x))[:5])
@@ -18,26 +18,28 @@ def generate_data():
     return lerp(data[-1],sent_data_value,0.1)
 
 def update_graph():
-    global maxv,minv
+    global maxv,minv,timev
     data.append(generate_data())
+    timev = float(str(time.time()-time_start)[:5])
     line.set_data(range(len(data)), data)
     plot.set_xlim(0, len(data))
     plot.set_ylim(min(data)-20, max(data)+20)
     maxv = float(temp.get().split(' /')[1])
     minv = float(temp.get().split(' /')[0])
     down_range_text.set_position((len(data)/10,maxv))
-    down_range_text.set_text(f"max: {maxv}")
+    down_range_text.set_text(f"max: {maxv}°C")
     up_range_text.set_position((len(data)/10,minv))
-    up_range_text.set_text(f"min: {minv}")
-    last_data_text.set_position((len(data)-1,data[-1]))
-    last_data_text.set_text(f"{data[-1]}")
-    last_data_label.config(text=f"Current Temp. : {data[-1]}")
-    measure_time.config(text=f"Time : {str(time.time()-time_start)[:5]}")
+    up_range_text.set_text(f"min: {minv}°C")
+    last_data_text.set_position((len(data),data[-1]))
+    last_data_text.set_text(f"{data[-1]}°C")
+    last_data_label.config(text=f"Current Temp. : {data[-1]}°C")
+    measure_time.config(text=f"Time : {timev}s")
     canvas.draw()
     global stabilize
     if abs(data[-1]-sent_data_value) < 0.1 and not stabilize:
         stabilize = True
         #messagebox.showinfo(title="Complite",message="Temperatura ustabiliziowana")
+        
 def update_options():
     global current
     a = ""
@@ -49,8 +51,8 @@ def update_options():
         MAX_CURRENT.create_rectangle(10+20*i,20-(10*pid[i]["on"]),20*(i+1),30-(10*pid[i]["on"]),fill='white')  
         MAX_CURRENT.bind('<Button>', clicked)
         a += str(pid[i]["on"])
-    MAX_CURRENT.grid(row=0, column=3, padx=5, pady=5, sticky="nsew")
-    current.set(str(int(a,2)*0.1)[:4])
+    MAX_CURRENT.grid(row=0, column=5, padx=5, pady=5, sticky="nsew")
+    current.set(str(int(a,2)*0.1)[:3])
     currentValue.config(text=f'Current: {current.get()}A')
         
 def send_serial_data():
@@ -60,12 +62,12 @@ def send_serial_data():
     try:
         v = float(entry.get())
     except ValueError:
-        v = max(min(float(m[1]),float(m[1])),float(m[0]))
+        v = max(min(sent_data_value,float(m[1])),float(m[0]))
     sent_data_value = max(min(v,float(m[1])),float(m[0]))
     sent_data_line.set_ydata([sent_data_value])
     up_range.set_ydata([float(m[1])])
     down_range.set_ydata([float(m[0])])
-    set_data_label.config(text=f"Set Temp. : {sent_data_value}")
+    set_data_label.config(text=f"Set Temp. : {sent_data_value}°C")
     stabilize = False
     update_graph()
     #serial.Serial(port=port.get())
@@ -140,49 +142,53 @@ send_button.grid(row=1,column=0)
 last_data_label = Label(data_panel, text="")
 last_data_label.grid(row=0,column=1)
 
-set_data_label = Label(data_panel, text=f"Set Temp. : {sent_data_value}")
+set_data_label = Label(data_panel, text=f"Set Temp. : {sent_data_value}°C")
 set_data_label.grid(row=1,column=1)
 
-measure_time = Label(data_panel, text=f"Time : {str(time.time()-time_start)[:5]}")
+measure_time = Label(data_panel, text=f"Time : {str(time.time()-time_start)[:5]}s")
 measure_time.grid(row=0,column=2,sticky="ne")
 
 for widget in data_panel.winfo_children():
     widget.grid_configure(padx=5, pady=5)
     
+Label(options,text="Port:").grid(row=0,column=0)
+Label(options,text="Temp Range:").grid(row=0,column=1)
+
 pid = []
-for i in range(1,7):
-    b = {'x1':10+20*(i-1),'y1':10,'x2':20*i,'y2':30,'on':0}
+for i in range(6):
+    b = {'x1':10+20*i,'y1':10,'x2':20*(i+1),'y2':30,'on':0}
     pid.append(b)
-currentValue = Label(options,text=f'Current: 0.0A')
-currentValue.grid(row=0,column=4)
+    
 port_choice = ['1200','2400','4800','9600','19200','38400','57600','115200']
 port = StringVar(options)
 port.set('1200')
 portMenu = OptionMenu(options, port, *port_choice)
-portMenu.grid(row=0,column=0)
+portMenu.grid(row=1,column=0)
 
 tempRange_choice = ['-10 /+50','-10 /+100','-100 /+10','-50 /+50','+15 /+30','+30 /+45','+45 /+60','-100 /+250']
 temp = StringVar(options)
 temp.set('-10 /+50')
 temp.trace_add("write",lambda v,i,m:send_serial_data())
 tempMenu = OptionMenu(options, temp, *tempRange_choice)
-tempMenu.grid(row=0,column=1)
+tempMenu.grid(row=1,column=1)
 
 current_choice = [0.1,0.2,0.4,0.8,1.6,3.2]
-for i in current_choice.copy():
-    for j in current_choice.copy():
-        if(i != j and float(str(i+j)[:4]) not in current_choice):
-            current_choice.append(float(str(i+j)[:4]))
+for i in [0,1,2,3,4,5]:
+    for j in [0,1,2,3,4,5]:
+        if((2**i+2**j)/10 not in current_choice):
+            current_choice.append((2**i+2**j)/10)
 current_choice.sort()
 current = StringVar(options)
 current.set('0.1')
 current.trace_add("write",lambda v,i,m:currentValue.config(text=f'Current: {current.get()}A'))
 currentMenu = OptionMenu(options, current, *current_choice)
-currentMenu.grid(row=0,column=5)
+currentMenu.grid(row=0,column=4)
+currentValue = Label(options,text=f'Current: 0.0A')
+currentValue.grid(row=0,column=3)
 update_options()
 
 for widget in options.winfo_children():
-    widget.grid_configure(padx=5, pady=5)
+    widget.grid_configure(padx=5, pady=2)
 
 fig = Figure(figsize=(5, 5), dpi = 100)
 fig.patch.set_facecolor('#F0F0F0')
@@ -194,8 +200,8 @@ line, = plot.plot(data, 'g')
 maxv = float(temp.get().split(' /')[1])
 minv = float(temp.get().split(' /')[0])
 last_data_text = plot.text(0, 0, f"0", ha='left', va='bottom', fontsize=8, color='red')
-up_range_text = plot.text(len(data), maxv, f"min: {maxv}", ha='left', va='bottom', fontsize=8, color='grey')
-down_range_text = plot.text(len(data), minv, f"max: {minv}", ha='left', va='bottom', fontsize=8, color='grey')
+up_range_text = plot.text(len(data), maxv, f"min: {maxv}°C", ha='left', va='bottom', fontsize=8, color='grey')
+down_range_text = plot.text(len(data), minv, f"max: {minv}°C", ha='left', va='bottom', fontsize=8, color='grey')
 up_range = plot.axhline(y=maxv, color='grey', linestyle='--')
 down_range = plot.axhline(y=minv, color='grey', linestyle='--')
 sent_data_line = plot.axhline(y=sent_data_value, color='r', linestyle='--')
