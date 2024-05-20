@@ -18,10 +18,17 @@ def generate_data():
     return lerp(data[-1],sent_data_value,0.1)
 
 def update_graph():
+    global maxv,minv
     data.append(generate_data())
     line.set_data(range(len(data)), data)
     plot.set_xlim(0, len(data))
-    plot.set_ylim(0, max(data)+20)
+    plot.set_ylim(min(data)-20, max(data)+20)
+    maxv = float(temp.get().split(' /')[1])
+    minv = float(temp.get().split(' /')[0])
+    down_range_text.set_position((len(data)/10,maxv))
+    down_range_text.set_text(f"max: {maxv}")
+    up_range_text.set_position((len(data)/10,minv))
+    up_range_text.set_text(f"min: {minv}")
     last_data_text.set_position((len(data)-1,data[-1]))
     last_data_text.set_text(f"{data[-1]}")
     last_data_label.config(text=f"Current Temp. : {data[-1]}")
@@ -48,18 +55,32 @@ def update_options():
         
 def send_serial_data():
     global sent_data_value,stabilize,port
-    sent_data_value = float(entry.get())
+    m = temp.get().split(' /')
+    v = 0
+    try:
+        v = float(entry.get())
+    except ValueError:
+        v = max(min(float(m[1]),float(m[1])),float(m[0]))
+    sent_data_value = max(min(v,float(m[1])),float(m[0]))
     sent_data_line.set_ydata([sent_data_value])
+    up_range.set_ydata([float(m[1])])
+    down_range.set_ydata([float(m[0])])
     set_data_label.config(text=f"Set Temp. : {sent_data_value}")
     stabilize = False
     update_graph()
-    serial.Serial(port=port.get())
+    #serial.Serial(port=port.get())
+    #current.get()
+    #temp.get()
     entry.delete(0,len(str(sent_data_value)))
     
-def validate_entry(new_value):
-    if new_value == "" or new_value.isdigit():
+def validate_entry(value):
+    if value == '' or value == '-':
         return True
-    return False
+    try:
+        float(value)
+        return True
+    except ValueError:
+        return False
 
 def on_closing():
     answer = messagebox.askquestion("Warning", "Do you want to save the data?", icon="warning")
@@ -143,6 +164,7 @@ portMenu.grid(row=0,column=0)
 tempRange_choice = ['-10 /+50','-10 /+100','-100 /+10','-50 /+50','+15 /+30','+30 /+45','+45 /+60','-100 /+250']
 temp = StringVar(options)
 temp.set('-10 /+50')
+temp.trace_add("write",lambda v,i,m:send_serial_data())
 tempMenu = OptionMenu(options, temp, *tempRange_choice)
 tempMenu.grid(row=0,column=1)
 
@@ -169,7 +191,13 @@ plot.grid()
 
 line, = plot.plot(data, 'g')
 
+maxv = float(temp.get().split(' /')[1])
+minv = float(temp.get().split(' /')[0])
 last_data_text = plot.text(0, 0, f"0", ha='left', va='bottom', fontsize=8, color='red')
+up_range_text = plot.text(len(data), maxv, f"min: {maxv}", ha='left', va='bottom', fontsize=8, color='grey')
+down_range_text = plot.text(len(data), minv, f"max: {minv}", ha='left', va='bottom', fontsize=8, color='grey')
+up_range = plot.axhline(y=maxv, color='grey', linestyle='--')
+down_range = plot.axhline(y=minv, color='grey', linestyle='--')
 sent_data_line = plot.axhline(y=sent_data_value, color='r', linestyle='--')
 
 canvas = FigureCanvasTkAgg(fig, master=graphs)
