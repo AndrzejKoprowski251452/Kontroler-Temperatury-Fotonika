@@ -7,7 +7,7 @@ import time
 import json
 import serial
 
-data = [1]
+data = [0]
 sent_data_value = 50
 time_start = time.time()
 timev = float(str(time.time()-time_start)[:5])
