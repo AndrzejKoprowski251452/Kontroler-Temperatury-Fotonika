@@ -20,8 +20,11 @@ def update_graph():
     global maxv,minv,timev
     data.append(generate_data())
     timev = float(str(time.time()-time_start)[:5])
+    r = 0
+    if len(data) > 100:
+        r = len(data)-100
     line.set_data(range(len(data)), data)
-    plot.set_xlim(0, len(data))
+    plot.set_xlim(r, len(data))
     plot.set_ylim(min(data)-20, max(data)+20)
     maxv = float(temp.get().split(' /')[1])
     minv = float(temp.get().split(' /')[0])
