@@ -1,7 +1,7 @@
 from tkinter import *
 from tkinter import messagebox
 from matplotlib.figure import Figure
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import os
 import time
 import json
@@ -11,6 +11,7 @@ data = [0]
 sent_data_value = 50
 time_start = time.time()
 timev = float(str(time.time()-time_start)[:5])
+connection = serial.Serial('COM3',1200)
 def lerp(x1: float, y1: float, x: float):
     return float(str(x1+((y1-x1)*x))[:5])
 def generate_data():
@@ -54,7 +55,7 @@ def update_options():
     currentValue.config(text=f'Current: {current.get()}A')
         
 def send_serial_data():
-    global sent_data_value,stabilize,port
+    global sent_data_value,port
     m = temp.get().split(' /')
     v = 0
     try:
@@ -66,12 +67,14 @@ def send_serial_data():
     up_range.set_ydata([float(m[1])])
     down_range.set_ydata([float(m[0])])
     set_data_label.config(text=f"Set Temp. : {sent_data_value}°C")
-    stabilize = False
     update_graph()
-    #serial.Serial(port=port.get())
     #current.get()
     #temp.get()
     entry.delete(0,len(str(sent_data_value)))
+    
+def change_port():
+    global connection
+    connection = serial.Serial('COM3',port.get())
     
 def validate_entry(value):
     if value == '' or value == '-':
@@ -160,6 +163,7 @@ for i in range(6):
 port_choice = ['1200','2400','4800','9600','19200','38400','57600','115200']
 port = StringVar(options)
 port.set('1200')
+port.trace_add("write",lambda v,i,m:change_port())
 portMenu = OptionMenu(options, port, *port_choice)
 portMenu.grid(row=1,column=0)
 
@@ -206,6 +210,7 @@ canvas.get_tk_widget().grid(row=0, column=0, sticky="nsew")
 
 def update_periodically():
     update_graph()
+    s = serial.Serial('COM3',9600)
     window.after(100, update_periodically)
 
 update_periodically()
