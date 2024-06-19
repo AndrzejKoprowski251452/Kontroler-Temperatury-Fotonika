@@ -6,12 +6,14 @@ import os
 import time
 import json
 import serial
+import serial.tools
+import serial.tools.list_ports
 
 data = [0]
 sent_data_value = 50
 time_start = time.time()
 timev = float(str(time.time()-time_start)[:5])
-connection = serial.Serial('COM3',1200)
+connection = serial.Serial('COM3',9600)
 def lerp(x1: float, y1: float, x: float):
     return float(str(x1+((y1-x1)*x))[:5])
 def generate_data():
@@ -74,7 +76,7 @@ def send_serial_data():
     
 def change_port():
     global connection
-    connection = serial.Serial('COM3',port.get())
+    connection.port(port.get())
     
 def validate_entry(value):
     if value == '' or value == '-':
@@ -210,7 +212,7 @@ canvas.get_tk_widget().grid(row=0, column=0, sticky="nsew")
 
 def update_periodically():
     update_graph()
-    s = serial.Serial('COM3',9600)
+    #print(serial.tools.list_ports.comports()[0])
     window.after(100, update_periodically)
 
 update_periodically()
