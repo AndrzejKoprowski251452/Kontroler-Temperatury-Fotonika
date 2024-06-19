@@ -13,7 +13,7 @@ data = [0]
 sent_data_value = 50
 time_start = time.time()
 timev = float(str(time.time()-time_start)[:5])
-connection = serial.Serial('COM3',9600)
+connection = serial.Serial('COM3',9600,timeout=0.01)
 def lerp(x1: float, y1: float, x: float):
     return float(str(x1+((y1-x1)*x))[:5])
 def generate_data():
@@ -164,7 +164,7 @@ for i in range(6):
     
 port_choice = ['1200','2400','4800','9600','19200','38400','57600','115200']
 port = StringVar(options)
-port.set('1200')
+port.set('9600')
 port.trace_add("write",lambda v,i,m:change_port())
 portMenu = OptionMenu(options, port, *port_choice)
 portMenu.grid(row=1,column=0)
@@ -213,6 +213,8 @@ canvas.get_tk_widget().grid(row=0, column=0, sticky="nsew")
 def update_periodically():
     update_graph()
     #print(serial.tools.list_ports.comports()[0])
+    connection.write(str.encode('o'))
+    print(connection.readline().decode())
     window.after(100, update_periodically)
 
 update_periodically()
