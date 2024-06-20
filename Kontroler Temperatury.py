@@ -2,6 +2,7 @@ from tkinter import *
 from tkinter import messagebox
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import numpy as np
 import os
 import time
 import json
@@ -9,33 +10,44 @@ import serial
 import serial.tools
 import serial.tools.list_ports
 
+def cut_num(v,n=2):
+    if type(v) == float:
+        v = np.floor(v*10**n)/10**n
+        return float(v)
+
 data = [0]
 sent_data_value = 50
 time_start = time.time()
-timev = float(str(time.time()-time_start)[:5])
+timev = cut_num(time.time()-time_start)
 connection = serial.Serial('COM3',9600,timeout=0.01)
-def lerp(x1: float, y1: float, x: float):
-    return float(str(x1+((y1-x1)*x))[:5])
-def generate_data():
-    return lerp(data[-1],sent_data_value,0.1)
+connection.write(str.encode('<+40 7.5 2.25 1 -5 +75>'))
+connection.write(str.encode('*GETMTT'))
 
 def update_graph():
     global maxv,minv,timev
-    data.append(generate_data())
-    timev = float(str(time.time()-time_start)[:5])
+    connection.write(str.encode('o'))
+    v = connection.readline().decode()
+    print(v)
+    if '=' in v:
+        v = [i.split('=') for i in v.split() if '=' in i]
+        v = {i[0]:i[1] for i in v}
+        print(v['Tr'])
+        print(v)
+        data.append(v['Tr'] or 1)
+    timev = cut_num(time.time()-time_start)
     r = 0
     if len(data) > 100:
         r = len(data)-100
     line.set_data(range(len(data)), data)
     plot.set_xlim(r, len(data))
     plot.set_ylim(min(data)-20, max(data)+20)
-    maxv = float(temp.get().split(' /')[1])
-    minv = float(temp.get().split(' /')[0])
-    down_range_text.set_position((len(data)/10,maxv))
+    maxv = min(float(temp.get().split(' /')[1]),max(data)+20)
+    minv = max(float(temp.get().split(' /')[0]),min(data)-20)
+    down_range_text.set_position((len(data),maxv))
     down_range_text.set_text(f"max: {maxv}°C")
-    up_range_text.set_position((len(data)/10,minv))
+    up_range_text.set_position((len(data),minv))
     up_range_text.set_text(f"min: {minv}°C")
-    last_data_text.set_position((len(data),data[-1]))
+    last_data_text.set_position((len(data)-1,data[-1]))
     last_data_text.set_text(f"{data[-1]}°C")
     last_data_label.config(text=f"Current Temp. : {data[-1]}°C")
     measure_time.config(text=f"Time : {timev}s")
@@ -53,7 +65,7 @@ def update_options():
         MAX_CURRENT.bind('<Button>', clicked)
         a += str(pid[i]["on"])
     MAX_CURRENT.grid(row=0, column=5, padx=5, pady=5, sticky="nsew")
-    current.set(str(int(a,2)*0.1)[:3])
+    current.set(cut_num(int(a,2)*0.1))
     currentValue.config(text=f'Current: {current.get()}A')
         
 def send_serial_data():
@@ -70,6 +82,7 @@ def send_serial_data():
     down_range.set_ydata([float(m[0])])
     set_data_label.config(text=f"Set Temp. : {sent_data_value}°C")
     update_graph()
+    connection.write(str.encode(f'*SETTPRS{temp.get()};'))
     #current.get()
     #temp.get()
     entry.delete(0,len(str(sent_data_value)))
@@ -96,7 +109,7 @@ def on_closing():
             "pid_current": current.get(),
             "pid_temp": temp.get(),
             "sent_data_value": sent_data_value,
-            "time":float(str(time.time()-time_start)[:4])
+            "time":cut_num(time.time()-time_start)
         }
         script_dir = os.path.dirname(os.path.abspath(__file__))
         measure_dir = os.path.join(script_dir, "Pomiary")
@@ -148,7 +161,7 @@ last_data_label.grid(row=0,column=1)
 set_data_label = Label(data_panel, text=f"Set Temp. : {sent_data_value}°C")
 set_data_label.grid(row=1,column=1)
 
-measure_time = Label(data_panel, text=f"Time : {str(time.time()-time_start)[:5]}s")
+measure_time = Label(data_panel, text=f"Time : {cut_num(time.time()-time_start)}s")
 measure_time.grid(row=0,column=2,sticky="ne")
 
 for widget in data_panel.winfo_children():
@@ -213,8 +226,8 @@ canvas.get_tk_widget().grid(row=0, column=0, sticky="nsew")
 def update_periodically():
     update_graph()
     #print(serial.tools.list_ports.comports()[0])
-    connection.write(str.encode('o'))
-    print(connection.readline().decode())
+    #connection.write(str.encode('o'))
+    #print(connection.readline().decode())
     window.after(100, update_periodically)
 
 update_periodically()
