@@ -1,10 +1,11 @@
 from tkinter import *
-from tkinter import messagebox
+from tkinter import messagebox,filedialog
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import numpy as np
 import os
 import time
+from datetime import datetime
 import json
 import serial
 import serial.tools
@@ -15,123 +16,186 @@ def cut_num(v,n=2):
         v = np.floor(v*10**n)/10**n
         return float(v)
 
-data = [0]
-sent_data_value = 50
-time_start = time.time()
-timev = cut_num(time.time()-time_start)
-connection = serial.Serial('COM3',9600,timeout=0.01)
-connection.write(str.encode('<+40 7.5 2.25 1 -5 +75>'))
-connection.write(str.encode('*GETMTT'))
-
-def update_graph():
-    global maxv,minv,timev
-    connection.write(str.encode('o'))
-    v = connection.readline().decode()
-    print(v)
-    if '=' in v:
-        v = [i.split('=') for i in v.split() if '=' in i]
-        v = {i[0]:i[1] for i in v}
-        print(v['Tr'])
-        print(v)
-        data.append(v['Tr'] or 1)
-    timev = cut_num(time.time()-time_start)
-    r = 0
-    if len(data) > 100:
-        r = len(data)-100
-    line.set_data(range(len(data)), data)
-    plot.set_xlim(r, len(data))
-    plot.set_ylim(min(data)-20, max(data)+20)
-    maxv = min(float(temp.get().split(' /')[1]),max(data)+20)
-    minv = max(float(temp.get().split(' /')[0]),min(data)-20)
-    down_range_text.set_position((len(data),maxv))
-    down_range_text.set_text(f"max: {maxv}°C")
-    up_range_text.set_position((len(data),minv))
-    up_range_text.set_text(f"min: {minv}°C")
-    last_data_text.set_position((len(data)-1,data[-1]))
-    last_data_text.set_text(f"{data[-1]}°C")
-    last_data_label.config(text=f"Current Temp. : {data[-1]}°C")
-    measure_time.config(text=f"Time : {timev}s")
-    canvas.draw()
+#connection = serial.Serial('COM3',9600,timeout=0.01)
+#connection.write(str.encode('<+40 7.5 2.25 1 -5 +75>'))
+#connection.write(str.encode('*GETMTT'))
+    
+class App(Tk):
+    def __init__(self, *args, **kwargs): 
+        Tk.__init__(self, *args, **kwargs)
         
-def update_options():
-    global current
-    a = ""
-    MAX_CURRENT = Canvas(options,width=130,height=40)
-    MAX_CURRENT.create_rectangle(0,0,130,40,fill='black')
-    for i in range(6):
-        MAX_CURRENT.create_rectangle(10+20*i,10,20*(i+1),30,fill='grey')
-        MAX_CURRENT.create_text(15+20*i,35,text=f"{i+1}",fill="white", font=('Helvetica 8 bold'))
-        MAX_CURRENT.create_rectangle(10+20*i,20-(10*pid[i]["on"]),20*(i+1),30-(10*pid[i]["on"]),fill='white')  
-        MAX_CURRENT.bind('<Button>', clicked)
-        a += str(pid[i]["on"])
-    MAX_CURRENT.grid(row=0, column=5, padx=5, pady=5, sticky="nsew")
-    current.set(cut_num(int(a,2)*0.1))
-    currentValue.config(text=f'Current: {current.get()}A')
+        container = Frame(self)  
+        container.pack(side = "top", fill = "both", expand = True) 
+  
+        container.grid_rowconfigure(0, weight = 1)
+        container.grid_columnconfigure(0, weight = 1)
+
+        self.frames = {}  
+
+        for F in (StartPage, Options):
+  
+            frame = F(container, self)
+  
+            self.frames[F] = frame 
+  
+            frame.grid(row = 0, column = 0, sticky ="nsew")
+  
+        self.show_frame(StartPage)
         
-def send_serial_data():
-    global sent_data_value,port
-    m = temp.get().split(' /')
-    v = 0
-    try:
-        v = float(entry.get())
-    except ValueError:
-        v = max(min(sent_data_value,float(m[1])),float(m[0]))
-    sent_data_value = max(min(v,float(m[1])),float(m[0]))
-    sent_data_line.set_ydata([sent_data_value])
-    up_range.set_ydata([float(m[1])])
-    down_range.set_ydata([float(m[0])])
-    set_data_label.config(text=f"Set Temp. : {sent_data_value}°C")
-    update_graph()
-    connection.write(str.encode(f'*SETTPRS{temp.get()};'))
-    #current.get()
-    #temp.get()
-    entry.delete(0,len(str(sent_data_value)))
+        def update_graph():
+            #connection.write(str.encode('o'))
+            #v = connection.readline().decode()
+            #print(v)
+            #if '=' in v:
+                #v = [i.split('=') for i in v.split() if '=' in i]
+                #v = {i[0]:i[1] for i in v}
+            # print(v['Tr'])
+                #print(v)
+                #data.append(v['Tr'] or 1)
+            timev = cut_num(time.time()-time_start)
+            r = 0
+            if len(data) > 100:
+                r = len(data)-100
+            line.set_data(range(len(data)), data)
+            plot.set_xlim(r, len(data))
+            plot.set_ylim(min(data)-20, max(data)+20)
+            maxv = min(float(temp.get().split(' /')[1]),max(data)+20)
+            minv = max(float(temp.get().split(' /')[0]),min(data)-20)
+            down_range_text.set_position((len(data),maxv))
+            down_range_text.set_text(f"max: {maxv}°C")
+            up_range_text.set_position((len(data),minv))
+            up_range_text.set_text(f"min: {minv}°C")
+            last_data_text.set_position((len(data)-1,data[-1]))
+            last_data_text.set_text(f"{data[-1]}°C")
+            last_data_label.config(text=f"Current Temp. : {data[-1]}°C")
+            measure_time.config(text=f"Time : {timev}s")
+            changed_time.config(text=f'Time of measure : {cut_num(time.time()-time_change)}s')
+            canvas.draw()
+        
+        def update_options():
+            a = ""
+            MAX_CURRENT = Canvas(options,width=130,height=40)
+            MAX_CURRENT.create_rectangle(0,0,130,40,fill='black')
+            for i in range(6):
+                MAX_CURRENT.create_rectangle(10+20*i,10,20*(i+1),30,fill='grey')
+                MAX_CURRENT.create_text(15+20*i,35,text=f"{i+1}",fill="white", font=('Helvetica 8 bold'))
+                MAX_CURRENT.create_rectangle(10+20*i,20-(10*pid[i]["on"]),20*(i+1),30-(10*pid[i]["on"]),fill='white')  
+                MAX_CURRENT.bind('<Button>', clicked)
+                a += str(pid[i]["on"])
+            MAX_CURRENT.grid(row=0, column=5, padx=5, pady=5, sticky="nsew")
+            current.set(cut_num(int(a,2)*0.1))
+            currentValue.config(text=f'Current: {current.get()}A')
+        
+        def send_serial_data():
+            time_change = time.time()
+            m = temp.get().split(' /')
+            v = 0
+            try:
+                v = float(entry.get())
+            except ValueError:
+                v = max(min(sent_data_value,float(m[1])),float(m[0]))
+            sent_data_value = max(min(v,float(m[1])),float(m[0]))
+            sent_data_line.set_ydata([sent_data_value])
+            up_range.set_ydata([float(m[1])])
+            down_range.set_ydata([float(m[0])])
+            set_data_label.config(text=f"Set Temp. : {sent_data_value}°C")
+            update_graph()
+            #connection.write(str.encode(f'*SETTPRS{temp.get()};'))
+            #current.get()
+            #temp.get()
+            entry.delete(0,len(str(sent_data_value)))
     
-def change_port():
-    global connection
-    connection.port(port.get())
+        #def change_port():
+            #connection.port(port.get())
     
-def validate_entry(value):
-    if value == '' or value == '-':
-        return True
-    try:
-        float(value)
-        return True
-    except ValueError:
-        return False
+        def validate_entry(value):
+            if value == '' or value == '-':
+                return True
+            try:
+                float(value)
+                return True
+            except ValueError:
+                return False
 
-def on_closing():
-    answer = messagebox.askquestion("Warning", "Do you want to save the data?", icon="warning")
-    if answer == "yes":
-        data_dict = {
-            "data": data,
-            "pid_port": port.get(),
-            "pid_current": current.get(),
-            "pid_temp": temp.get(),
-            "sent_data_value": sent_data_value,
-            "time":cut_num(time.time()-time_start)
-        }
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        measure_dir = os.path.join(script_dir, "Pomiary")
-        if not os.path.exists(measure_dir):
-            os.makedirs(measure_dir)
-        existing_folders = [int(folder[-1]) for folder in os.listdir(measure_dir) if os.path.isdir(os.path.join(measure_dir, folder))]
-        latest_number = max(existing_folders) + 1 if existing_folders else 1
-        new_folder = os.path.join(measure_dir, 'Pomiar '+str(latest_number))
-        os.makedirs(new_folder)
-        save_path = os.path.join(new_folder, "plot.png")
-        fig.savefig(save_path)
-        json_path = os.path.join(new_folder, "data.json")
-        with open(json_path, "w") as json_file:
-            json.dump(data_dict, json_file)
-    window.destroy()
+        def on_closing():
+            answer = messagebox.askquestion("Warning", "Do you want to save the data?", icon="warning")
+            if answer == "yes":
+                data_dict = {
+                    "data": data,
+                    "pid_port": port.get(),
+                    "pid_current": current.get(),
+                    "pid_temp": temp.get(),
+                    "sent_data_value": sent_data_value,
+                    "time":cut_num(time.time()-time_start)
+                }
+                dir = filedialog.askdirectory()
+                name = 'pomiar-{}'.format(datetime.today().strftime('%Y-%m-%d'))
+                if not name in dir:
+                    dir = os.path.join(dir, name)
+                    os.makedirs(dir)
+                else:
+                    existing_folders = [f for f in os.listdir(dir) if os.path.isdir(os.path.join(dir, f))]
+                    matching_folders = [f for f in existing_folders if f.startswith(name) and f[-2].isdigit()]
+                    dir = os.path.join(dir,f'{name} ({len(matching_folders)})')
+                    os.makedirs(dir)
+                save_path = os.path.join(dir, "plot.png")
+                fig.savefig(save_path)
+                json_path = os.path.join(dir, "data.json")
+                with open(json_path, "w") as json_file:
+                    json.dump(data_dict, json_file)
+            window.destroy()
     
-def clicked(event):
-    for i in pid:
-        if i["x1"] <= event.x <= i["x2"] and i["y1"] <= event.y <= i["y2"]:
-            i["on"] = int(not bool(i['on']))
-    update_options()
+        def clicked(event):
+            for i in pid:
+                if i["x1"] <= event.x <= i["x2"] and i["y1"] <= event.y <= i["y2"]:
+                    i["on"] = int(not bool(i['on']))
+            update_options()
 
+    def show_frame(self, cont):
+        frame = self.frames[cont]
+        frame.tkraise()
+        
+class StartPage(Frame):
+    def __init__(self, parent, controller): 
+        Frame.__init__(self, parent)
+        
+        self.data = [0]
+        self.current_data = [0]
+        self.sent_data_value = 50
+        self.time_start = time.time()
+        self.time_change = time.time()
+        self.timev = cut_num(time.time()-self.time_start)
+        self.data_panel = LabelFrame(self,text="Data Panel")
+        self.data_panel.grid(row=0, padx=10, pady=10,sticky="news")
+        self.graphs = LabelFrame(self,text="Graph")
+        self.graphs.grid(row=2, padx=10, pady=10,sticky="news")
+        
+        self.entry = Entry(self.data_panel,validate="key",validatecommand=(window.register(validate_entry), '%P'))
+        self.entry.grid(row=0,column=0)
+
+        self.send_button = Button(self.data_panel, text="Send Data", command=send_serial_data)
+        self.send_button.grid(row=1,column=0)
+
+        self.last_data_label = Label(self.data_panel, text="")
+        self.last_data_label.grid(row=0,column=1)
+
+        self.set_data_label = Label(self.data_panel, text=f"Set Temp. : {sent_data_value}°C")
+        self.set_data_label.grid(row=1,column=1)
+
+        self.measure_time = Label(self.data_panel, text=f"Time : {cut_num(time.time()-self.time_start)}s")
+        self.measure_time.grid(row=0,column=2,sticky="ne")
+
+        self.changed_time = Label(self.data_panel, text=f'Time of measure : {cut_num(time.time()-time_change)}s')
+        self.changed_time.grid(row=1,column=2,sticky='ne')
+
+        for widget in self.data_panel.winfo_children():
+            widget.grid_configure(padx=5, pady=5)
+  
+class Options(Frame):
+    def __init__(self,parent,controller):
+        Frame.__init__(self,parent)
+        
+        
 window = Tk()
 window.title("Kontroler Temperatury")
 w = 600
@@ -139,33 +203,14 @@ h = 750
 window.minsize(w,h)
 window.maxsize(w,h)
 
-frame = Frame(window)
-frame.pack()
+menu = Menu(window)
+window.config(menu=menu)
+fileMenu = Menu(menu)
+fileMenu.add_command(label="Options")
+menu.add_cascade(label="File", menu=fileMenu)
 
 options = LabelFrame(frame,text="Options")
 options.grid(row=1, column=0, padx=10, pady=10, sticky="nsew")
-data_panel = LabelFrame(frame,text="Data Panel")
-data_panel.grid(row=0, padx=10, pady=10,sticky="news")
-graphs = LabelFrame(frame,text="Graph")
-graphs.grid(row=2, padx=10, pady=10,sticky="news")
- 
-entry = Entry(data_panel,validate="key",validatecommand=(window.register(validate_entry), '%P'))
-entry.grid(row=0,column=0)
-
-send_button = Button(data_panel, text="Send Data", command=send_serial_data)
-send_button.grid(row=1,column=0)
-
-last_data_label = Label(data_panel, text="")
-last_data_label.grid(row=0,column=1)
-
-set_data_label = Label(data_panel, text=f"Set Temp. : {sent_data_value}°C")
-set_data_label.grid(row=1,column=1)
-
-measure_time = Label(data_panel, text=f"Time : {cut_num(time.time()-time_start)}s")
-measure_time.grid(row=0,column=2,sticky="ne")
-
-for widget in data_panel.winfo_children():
-    widget.grid_configure(padx=5, pady=5)
     
 Label(options,text="Port:").grid(row=0,column=0)
 Label(options,text="Temp Range:").grid(row=0,column=1)
@@ -178,7 +223,7 @@ for i in range(6):
 port_choice = ['1200','2400','4800','9600','19200','38400','57600','115200']
 port = StringVar(options)
 port.set('9600')
-port.trace_add("write",lambda v,i,m:change_port())
+#port.trace_add("write",lambda v,i,m:change_port())
 portMenu = OptionMenu(options, port, *port_choice)
 portMenu.grid(row=1,column=0)
 
@@ -209,6 +254,7 @@ plot = fig.add_subplot(111)
 plot.grid()
 
 line, = plot.plot(data, 'g')
+plot.plot(current_data,'orange')
 
 maxv = float(temp.get().split(' /')[1])
 minv = float(temp.get().split(' /')[0])
