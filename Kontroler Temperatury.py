@@ -97,16 +97,16 @@ class StartPage(LabelFrame):
         self.send_button = Button(self, text="Send Data", command=self.send_serial_data)
         self.send_button.grid(row=0, column=2)
 
-        self.last_data_label = Label(self, text="")
+        self.last_data_label = Label(self)
         self.last_data_label.grid(row=1, column=2)
 
-        self.set_data_label = Label(self, text=f"Set Temp. : {self.sent_data_value}°C")
+        self.set_data_label = Label(self,text=f"Set Temp. : 50°C")
         self.set_data_label.grid(row=1, column=1)
 
-        self.measure_time = Label(self, text=f"Time : {cut_num(time.time() - self.time_start)}s")
+        self.measure_time = Label(self)
         self.measure_time.grid(row=0, column=3)
 
-        self.changed_time = Label(self, text=f'Time of measure : {cut_num(time.time() - self.time_change)}s')
+        self.changed_time = Label(self)
         self.changed_time.grid(row=1, column=3)
 
         for widget in self.winfo_children():
