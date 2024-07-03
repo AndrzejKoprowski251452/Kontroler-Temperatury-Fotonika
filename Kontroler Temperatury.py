@@ -8,6 +8,8 @@ import time
 from datetime import datetime
 import json
 import serial.tools.list_ports
+import numpy
+import subprocess
 
 def cut_num(v, n=2):
     if isinstance(v, float):
@@ -22,6 +24,7 @@ class App(Tk):
         container.pack(side="top", fill="both", expand=True)
         container.grid_rowconfigure(0, weight=1)
         container.grid_columnconfigure(0, weight=1)
+        
         self.port_choice = ['1200', '2400', '4800', '9600', '19200', '38400', '57600', '115200']
         self.port = StringVar(self)
         self.port.set('9600')
@@ -31,6 +34,9 @@ class App(Tk):
         self.current_choice = sorted([f'{i / 10:.1f}' for i in range(64)])
         self.current = StringVar(self)
         self.current.set('0.1')
+        self.connection = serial.Serial("COM3",57600,timeout=0)
+        self.connection.write(str.encode('P0.25'))
+        
         self.frames = {}
         for F in (StartPage, Options):
             frame = F(container, self)
@@ -85,8 +91,8 @@ class StartPage(LabelFrame):
         LabelFrame.__init__(self, parent)
         self.controller = controller
         
-        self.data = [0]
-        self.current = [0]
+        self.data = [[0],[0]]
+        self.current = [[0],[0]]
         self.sent_data_value = 50
         self.time_start = time.time()
         self.time_change = time.time()
@@ -108,6 +114,14 @@ class StartPage(LabelFrame):
 
         self.changed_time = Label(self)
         self.changed_time.grid(row=1, column=3)
+        
+        self.console = Text(self)
+        self.console.grid(row=2,column=1,columnspan=3)
+        
+        self.console_entry = Entry(self)
+        self.console_entry.grid(row=3,column=1,columnspan=3,sticky='we')
+        
+        self.console_entry.bind('<Return>',self.console_data)
 
         for widget in self.winfo_children():
             widget.grid_configure(padx=5, pady=5,rowspan=1)
@@ -117,13 +131,13 @@ class StartPage(LabelFrame):
         self.plot = self.fig.add_subplot(111)
         self.plot.grid()
 
-        self.line, = self.plot.plot(self.data, 'g')
-        self.current_data_line, = self.plot.plot(self.current, 'orange')
+        self.line, = self.plot.plot(self.data[0],self.data[1], 'g')
+        self.current_data_line, = self.plot.plot(self.current[0],self.current[1], 'orange')
         maxv = float(controller.temp.get().split(' /')[1])
         minv = float(controller.temp.get().split(' /')[0])
         self.last_data_text = self.plot.text(0, 0, "0", ha='left', va='bottom', fontsize=8, color='red')
-        self.up_range_text = self.plot.text(len(self.data), maxv, f"min: {maxv}°C", ha='left', va='bottom', fontsize=8, color='grey')
-        self.down_range_text = self.plot.text(len(self.data), minv, f"max: {minv}°C", ha='left', va='bottom', fontsize=8, color='grey')
+        self.up_range_text = self.plot.text(len(self.data[0]), maxv, f"min: {maxv}°C", ha='left', va='bottom', fontsize=8, color='grey')
+        self.down_range_text = self.plot.text(len(self.data[0]), minv, f"max: {minv}°C", ha='left', va='bottom', fontsize=8, color='grey')
         self.up_range = self.plot.axhline(y=maxv, color='grey', linestyle='--')
         self.down_range = self.plot.axhline(y=minv, color='grey', linestyle='--')
         self.sent_data_line = self.plot.axhline(y=self.sent_data_value, color='r', linestyle='--')
@@ -131,33 +145,45 @@ class StartPage(LabelFrame):
         self.canvas = FigureCanvasTkAgg(self.fig, master=self)
         self.canvas.draw()
         self.canvas.get_tk_widget().grid(row=0, column=0, sticky="nsew",rowspan=20)
+        
+    def console_data(self,e):
+        self.console.insert(END,self.console_entry.get())
+        proc = subprocess.Popen('dir', stdout=subprocess.PIPE, shell=True)
+        cmdstr = proc.stdout.read()
+        self.console.insert(END,cmdstr)
 
     def update_graph(self):
-        #connection.write(str.encode('o'))
-        #v = connection.readline().decode()
-        #print(v)
-        #if '=' in v:
-            #v = [i.split('=') for i in v.split() if '=' in i]
-            #v = {i[0]:i[1] for i in v}
-        # print(v['Tr'])
-            #print(v)
-            #data.append(v['Tr'] or 1)
         timev = cut_num(time.time() - self.time_start)
+        v = self.controller.connection.readline().decode()
+        if not self.controller.connection.in_waiting:
+            #self.controller.connection.write(str.encode(f'*SETTPRS+{self.sent_data_value}'))
+            #self.controller.connection.write(str.encode('A'))
+            #print(self.controller.connection.readline().decode())
+            self.controller.connection.write(str.encode('o'))
+        self.controller.connection.flush()
+        print(v)
+        if 'Tr' in v:
+            v = [i.split('=') for i in v.split() if '=' in i]
+            v = {i[0]:i[1].replace('+','') for i in v if '+' in i[1] and i[1] != ''}
+            print('asdg')
+            if 'Tr' in v:
+                self.data[0].append(float(v['Tr'] or 1))
+                self.data[1].append(timev)
         r = 0
-        if len(self.data) > 100:
-            r = len(self.data) - 100
-        self.line.set_data(range(len(self.data)), self.data)
-        self.plot.set_xlim(r, len(self.data))
-        self.plot.set_ylim(min(self.data) - 20, max(self.data) + 20)
-        maxv = min(float(self.controller.temp.get().split(' /')[1]), max(self.data) + 20)
-        minv = max(float(self.controller.temp.get().split(' /')[0]), min(self.data) - 20)
-        self.down_range_text.set_position((len(self.data), maxv))
+        if len(self.data[0]) > 100:
+            r = len(self.data[0]) - 100
+        self.line.set_data(self.data[1], self.data[0])
+        self.plot.set_xlim(r, len(self.data[0]))
+        self.plot.set_ylim(min(self.data[0]) - 20, max(self.data[0]) + 20)
+        maxv = min(float(self.controller.temp.get().split(' /')[1]), max(self.data[0]) + 20)
+        minv = max(float(self.controller.temp.get().split(' /')[0]), min(self.data[0]) - 20)
+        self.down_range_text.set_position((len(self.data[0]), maxv))
         self.down_range_text.set_text(f"max: {maxv}°C")
-        self.up_range_text.set_position((len(self.data), minv))
+        self.up_range_text.set_position((len(self.data[0]), minv))
         self.up_range_text.set_text(f"min: {minv}°C")
-        self.last_data_text.set_position((len(self.data) - 1, self.data[-1]))
-        self.last_data_text.set_text(f"{self.data[-1]}°C")
-        self.last_data_label.config(text=f"Current Temp. : {self.data[-1]}°C")
+        self.last_data_text.set_position((len(self.data[0]) - 1, self.data[0][-1]))
+        self.last_data_text.set_text(f"{self.data[0][-1]}°C")
+        self.last_data_label.config(text=f"Current Temp. : {self.data[0][-1]}°C")
         self.measure_time.config(text=f"Time : {timev}s")
         self.changed_time.config(text=f'Time of measure : {cut_num(time.time() - self.time_change)}s')
         self.canvas.draw()
