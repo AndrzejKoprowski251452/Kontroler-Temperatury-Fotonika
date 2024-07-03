@@ -34,7 +34,7 @@ class App(Tk):
         self.current_choice = sorted([f'{i / 10:.1f}' for i in range(64)])
         self.current = StringVar(self)
         self.current.set('0.1')
-        self.connection = serial.Serial("COM3",57600,timeout=0)
+        self.connection = serial.Serial("COM3",9600,timeout=0)
         self.connection.write(str.encode('P0.25'))
         
         self.frames = {}
@@ -158,17 +158,14 @@ class StartPage(LabelFrame):
         if not self.controller.connection.in_waiting:
             #self.controller.connection.write(str.encode(f'*SETTPRS+{self.sent_data_value}'))
             #self.controller.connection.write(str.encode('A'))
-            #print(self.controller.connection.readline().decode())
+            print(self.controller.connection.readline().decode())
             self.controller.connection.write(str.encode('o'))
         self.controller.connection.flush()
-        print(v)
         if 'Tr' in v:
             v = [i.split('=') for i in v.split() if '=' in i]
             v = {i[0]:i[1].replace('+','') for i in v if '+' in i[1] and i[1] != ''}
-            print('asdg')
-            if 'Tr' in v:
-                self.data[0].append(float(v['Tr'] or 1))
-                self.data[1].append(timev)
+            self.data[0].append(float(v['Tr'] or 1))
+            self.data[1].append(timev)
         r = 0
         if len(self.data[0]) > 100:
             r = len(self.data[0]) - 100
