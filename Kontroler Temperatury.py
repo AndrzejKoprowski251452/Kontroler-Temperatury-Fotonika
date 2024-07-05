@@ -34,8 +34,9 @@ class App(Tk):
         self.current_choice = sorted([f'{i / 10:.1f}' for i in range(64)])
         self.current = StringVar(self)
         self.current.set('0.1')
-        self.connection = serial.Serial("COM3",9600,timeout=0)
-        self.connection.write(str.encode('P0.25'))
+        #self.connection = serial.Serial("COM3",9600,timeout=0)
+        #self.connection.write(str.encode('P0.25'))
+        #self.connection.write(str.encode('SETTPRS40.0'))
         
         self.frames = {}
         for F in (StartPage, Options):
@@ -147,25 +148,27 @@ class StartPage(LabelFrame):
         self.canvas.get_tk_widget().grid(row=0, column=0, sticky="nsew",rowspan=20)
         
     def console_data(self,e):
-        self.console.insert(END,self.console_entry.get())
-        proc = subprocess.Popen('dir', stdout=subprocess.PIPE, shell=True)
-        cmdstr = proc.stdout.read()
-        self.console.insert(END,cmdstr)
+        try:
+            output = subprocess.check_output(self.console_entry.get(), shell=True, stderr=subprocess.STDOUT, universal_newlines=True)
+            self.console.insert(INSERT, output)
+        except subprocess.CalledProcessError as e:
+            self.console.insert(INSERT, f"Error: {e.output}")
+        self.console_entry.delete(0, END)
 
     def update_graph(self):
         timev = cut_num(time.time() - self.time_start)
-        v = self.controller.connection.readline().decode()
-        if not self.controller.connection.in_waiting:
-            #self.controller.connection.write(str.encode(f'*SETTPRS+{self.sent_data_value}'))
+        #v = self.controller.connection.readline().decode()
+        #if not self.controller.connection.in_waiting:
+            #self.controller.connection.write(str.encode('SETTPRS40.0'))
             #self.controller.connection.write(str.encode('A'))
-            print(self.controller.connection.readline().decode())
-            self.controller.connection.write(str.encode('o'))
-        self.controller.connection.flush()
-        if 'Tr' in v:
-            v = [i.split('=') for i in v.split() if '=' in i]
-            v = {i[0]:i[1].replace('+','') for i in v if '+' in i[1] and i[1] != ''}
-            self.data[0].append(float(v['Tr'] or 1))
-            self.data[1].append(timev)
+            #print(self.controller.connection.readline().decode())
+            #self.controller.connection.write(str.encode('o'))
+        #self.controller.connection.flush()
+        #if 'Tr' in v:
+            #v = [i.split('=') for i in v.split() if '=' in i]
+            #v = {i[0]:i[1].replace('+','') for i in v if '+' in i[1] and i[1] != ''}
+            #self.data[0].append(float(v['Tr'] or 1))
+            #self.data[1].append(timev)
         r = 0
         if len(self.data[0]) > 100:
             r = len(self.data[0]) - 100
