@@ -9,7 +9,9 @@ from datetime import datetime
 import json
 import serial.tools.list_ports
 import numpy
-import subprocess
+import contextlib
+import sys
+import io
 
 def cut_num(v, n=2):
     if isinstance(v, float):
@@ -30,13 +32,16 @@ class App(Tk):
         self.port.set('9600')
         self.tempRange_choice = ['-10 /+50', '-10 /+100', '-100 /+10', '-50 /+50', '+15 /+30', '+30 /+45', '+45 /+60', '-100 /+250']
         self.temp = StringVar(self)
-        self.temp.set('-10 /+50')
+        self.temp.set('-10 /+100')
         self.current_choice = sorted([f'{i / 10:.1f}' for i in range(64)])
         self.current = StringVar(self)
         self.current.set('0.1')
-        #self.connection = serial.Serial("COM3",9600,timeout=0)
-        #self.connection.write(str.encode('P0.25'))
-        #self.connection.write(str.encode('SETTPRS40.0'))
+        self.graphFold = True
+        
+        try:
+            self.connection = serial.Serial("COM4",int(self.port.get()),timeout=0)
+        except:
+            print('No divice connected')
         
         self.frames = {}
         for F in (StartPage, Options):
@@ -92,20 +97,23 @@ class StartPage(LabelFrame):
         LabelFrame.__init__(self, parent)
         self.controller = controller
         
-        self.data = [[0],[0]]
-        self.current = [[0],[0]]
+        self.data = [0]
+        self.current = [0]
+        self.time = [0]
         self.sent_data_value = 50
+        self.buffor = ['*GETTACT;','*GETIOUT;']
         self.time_start = time.time()
         self.time_change = time.time()
+        self.r = 0
         
         self.entry = Entry(self, validate="key", validatecommand=(controller.register(self.validate_entry), '%P'))
         self.entry.grid(row=0, column=1)
 
         self.send_button = Button(self, text="Send Data", command=self.send_serial_data)
-        self.send_button.grid(row=0, column=2)
+        self.send_button.grid(row=0, column=2,sticky='w')
 
         self.last_data_label = Label(self)
-        self.last_data_label.grid(row=1, column=2)
+        self.last_data_label.grid(row=1, column=2,sticky='w')
 
         self.set_data_label = Label(self,text=f"Set Temp. : 50°C")
         self.set_data_label.grid(row=1, column=1)
@@ -119,71 +127,74 @@ class StartPage(LabelFrame):
         self.console = Text(self)
         self.console.grid(row=2,column=1,columnspan=3)
         
-        self.console_entry = Entry(self)
-        self.console_entry.grid(row=3,column=1,columnspan=3,sticky='we')
-        
-        self.console_entry.bind('<Return>',self.console_data)
-
         for widget in self.winfo_children():
             widget.grid_configure(padx=5, pady=5,rowspan=1)
 
         self.fig = Figure(figsize=(5, 5), dpi=100)
         self.fig.patch.set_facecolor('#F0F0F0')
-        self.plot = self.fig.add_subplot(111)
-        self.plot.grid()
-
-        self.line, = self.plot.plot(self.data[0],self.data[1], 'g')
-        self.current_data_line, = self.plot.plot(self.current[0],self.current[1], 'orange')
+        self.ax1 = self.fig.add_subplot(1,1,1)
+        self.ax2 = self.ax1.twinx()
+        self.ax1.grid()
+        self.line, = self.ax1.plot(self.time,self.data, 'g')
+        self.current_data_line, = self.ax2.plot(self.time,self.current, 'orange')
         maxv = float(controller.temp.get().split(' /')[1])
         minv = float(controller.temp.get().split(' /')[0])
-        self.last_data_text = self.plot.text(0, 0, "0", ha='left', va='bottom', fontsize=8, color='red')
-        self.up_range_text = self.plot.text(len(self.data[0]), maxv, f"min: {maxv}°C", ha='left', va='bottom', fontsize=8, color='grey')
-        self.down_range_text = self.plot.text(len(self.data[0]), minv, f"max: {minv}°C", ha='left', va='bottom', fontsize=8, color='grey')
-        self.up_range = self.plot.axhline(y=maxv, color='grey', linestyle='--')
-        self.down_range = self.plot.axhline(y=minv, color='grey', linestyle='--')
-        self.sent_data_line = self.plot.axhline(y=self.sent_data_value, color='r', linestyle='--')
+        self.last_data_text = self.ax1.text(0, 0, "0", ha='left', va='bottom', fontsize=8, color='red')
+        self.last_current_text = self.ax1.text(0, 0, "0", ha='left', va='bottom', fontsize=8, color='orange')
+        self.up_range_text = self.ax1.text(self.time[-1]*0.8, maxv, f"min: {maxv}°C", ha='left', va='bottom', fontsize=8, color='grey')
+        self.down_range_text = self.ax1.text(self.time[-1]*0.8, minv, f"max: {minv}°C", ha='left', va='bottom', fontsize=8, color='grey')
+        self.up_range = self.ax1.axhline(y=maxv, color='grey', linestyle='--')
+        self.down_range = self.ax1.axhline(y=minv, color='grey', linestyle='--')
+        self.sent_data_line = self.ax1.axhline(y=self.sent_data_value, color='r', linestyle='--')
+        self.fig.tight_layout()
 
         self.canvas = FigureCanvasTkAgg(self.fig, master=self)
         self.canvas.draw()
         self.canvas.get_tk_widget().grid(row=0, column=0, sticky="nsew",rowspan=20)
         
-    def console_data(self,e):
-        try:
-            output = subprocess.check_output(self.console_entry.get(), shell=True, stderr=subprocess.STDOUT, universal_newlines=True)
-            self.console.insert(INSERT, output)
-        except subprocess.CalledProcessError as e:
-            self.console.insert(INSERT, f"Error: {e.output}")
-        self.console_entry.delete(0, END)
+    def console_data(self):
+        output = io.StringIO()
+        contextlib.redirect_stdout(output)
+        print(output.getvalue())
+        self.console.insert(INSERT, output.getvalue())
 
     def update_graph(self):
+        #self.console_data()
         timev = cut_num(time.time() - self.time_start)
-        #v = self.controller.connection.readline().decode()
-        #if not self.controller.connection.in_waiting:
-            #self.controller.connection.write(str.encode('SETTPRS40.0'))
-            #self.controller.connection.write(str.encode('A'))
-            #print(self.controller.connection.readline().decode())
-            #self.controller.connection.write(str.encode('o'))
-        #self.controller.connection.flush()
-        #if 'Tr' in v:
-            #v = [i.split('=') for i in v.split() if '=' in i]
-            #v = {i[0]:i[1].replace('+','') for i in v if '+' in i[1] and i[1] != ''}
-            #self.data[0].append(float(v['Tr'] or 1))
-            #self.data[1].append(timev)
-        r = 0
-        if len(self.data[0]) > 100:
-            r = len(self.data[0]) - 100
-        self.line.set_data(self.data[1], self.data[0])
-        self.plot.set_xlim(r, len(self.data[0]))
-        self.plot.set_ylim(min(self.data[0]) - 20, max(self.data[0]) + 20)
-        maxv = min(float(self.controller.temp.get().split(' /')[1]), max(self.data[0]) + 20)
-        minv = max(float(self.controller.temp.get().split(' /')[0]), min(self.data[0]) - 20)
-        self.down_range_text.set_position((len(self.data[0]), maxv))
+        for b in self.buffor:
+            if not self.controller.connection.in_waiting:
+                self.controller.connection.write(str.encode(b))
+                self.controller.connection.flush()
+            v = self.controller.connection.readline().decode('Latin-1')
+            print(v)
+            try:
+                if '*TACT ' in v:
+                    self.data.append(float(v[5:12]))
+                    self.time.append(timev)
+                if '*IOUT ' in v:
+                    self.current.append(float(v[9:15].replace('A','')))
+            except KeyError:
+                x = 0
+        if self.time[-1] > 20 and self.controller.graphFold:
+            self.r = self.time[-1]-20
+        self.line.set_data(self.time, self.data)
+        if len(self.time) == len(self.current):
+            self.current_data_line.set_data(self.time,self.current)
+        self.ax1.set_xlim(self.r, self.time[-1])
+        self.ax1.set_ylim(min(self.data) - 20, max(self.data) + 20)
+        self.ax2.set_xlim(self.r, self.time[-1])
+        self.ax2.set_ylim(min(self.current) - 20, max(self.current) + 20)
+        maxv = min(float(self.controller.temp.get().split(' /')[1]), max(self.data) + 20)
+        minv = max(float(self.controller.temp.get().split(' /')[0]), min(self.data) - 20)
+        self.down_range_text.set_position((self.time[-1], maxv))
         self.down_range_text.set_text(f"max: {maxv}°C")
-        self.up_range_text.set_position((len(self.data[0]), minv))
+        self.up_range_text.set_position((self.time[-1], minv))
         self.up_range_text.set_text(f"min: {minv}°C")
-        self.last_data_text.set_position((len(self.data[0]) - 1, self.data[0][-1]))
-        self.last_data_text.set_text(f"{self.data[0][-1]}°C")
-        self.last_data_label.config(text=f"Current Temp. : {self.data[0][-1]}°C")
+        self.last_data_text.set_position((self.time[-1] - 1, self.data[-1]))
+        self.last_data_text.set_text(f"{self.data[-1]}°C")
+        self.last_current_text.set_position((self.time[-1] - 1, self.current[-1]))
+        self.last_current_text.set_text(f"{self.current[-1]}A")
+        self.last_data_label.config(text=f"Current Temp. : {self.data[-1]}°C")
         self.measure_time.config(text=f"Time : {timev}s")
         self.changed_time.config(text=f'Time of measure : {cut_num(time.time() - self.time_change)}s')
         self.canvas.draw()
@@ -197,6 +208,10 @@ class StartPage(LabelFrame):
         except ValueError:
             v = max(min(self.sent_data_value, float(m[1])), float(m[0]))
         self.sent_data_value = max(min(v, float(m[1])), float(m[0]))
+        self.controller.connection.write(str.encode(f'*SETTPRS{self.sent_data_value};'))
+        self.controller.connection.write(str.encode('A'))
+
+        #self.buffor.append(f'*SETTPRS{self.sent_data_value};')
         self.sent_data_line.set_ydata([self.sent_data_value])
         self.up_range.set_ydata([float(m[1])])
         self.down_range.set_ydata([float(m[0])])
@@ -208,7 +223,7 @@ class StartPage(LabelFrame):
         if value == '' or value == '-':
             return True
         try:
-            float(value)
+            float(value.replace('.',''))
             return True
         except ValueError:
             return False
