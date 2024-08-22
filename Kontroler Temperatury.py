@@ -35,22 +35,24 @@ class App(Tk):
         self.graphFold = True
         self.connected = True
         
+        self.frame = StartPage(self.container, self)
+        self.frame.grid(row=0, column=0, sticky="nsew")
+        self.frame.tkraise()
+        
+        sys.stdout = StreamToFunction(self.frame.console_data)
+
         try:
             self.connection = serial.Serial("COM4",int(self.port.get()),timeout=0)
             self.connected = True
         except:
             self.connected = False
             print('No divice connected')
-        
-        self.frame = StartPage(self.container, self)
-        self.frame.grid(row=0, column=0, sticky="nsew")
-        self.frame.tkraise()
 
         self.update_graph()
 
     def update_graph(self):
         self.frame.update_graph()
-        self.after(100, self.update_graph)
+        self.after(10, self.update_graph)####################################
         
     def on_closing(self):
         answer = messagebox.askquestion("Warning", "Do you want to save the data?", icon="warning")
@@ -79,7 +81,8 @@ class App(Tk):
             json_path = os.path.join(dir, "data.json")
             with open(json_path, "w") as json_file:
                 json.dump(data_dict, json_file)
-            self.connection.write(str.encode('*SETTPRS20.0;'))
+            if self.connected:
+                self.connection.write(str.encode('*SETTPRS20.0;'))
             window.destroy()
 
 class StartPage(LabelFrame):
@@ -90,7 +93,7 @@ class StartPage(LabelFrame):
         self.data = [0]
         self.current = [0]
         self.time = [0]
-        self.sent_data_value = 20
+        self.sent_data_value = 20.0
         self.buffor = ['*GETTACT;','*GETIOUT;']
         self.time_start = time.time()
         self.time_change = time.time()
@@ -143,10 +146,9 @@ class StartPage(LabelFrame):
         self.canvas.get_tk_widget().grid(row=0, column=0, sticky="nsew",rowspan=20)
         
     def console_data(self,f):
-        self.console.insert(INSERT, f)
+        self.console.insert(INSERT, f'{cut_num(time.time() - self.time_start)}: {f}\n')
 
     def update_graph(self):
-        sys.stdout = StreamToFunction(self.console_data)
         timev = cut_num(time.time() - self.time_start)
         if self.controller.connected:
             for b in self.buffor:
@@ -154,12 +156,14 @@ class StartPage(LabelFrame):
                     self.controller.connection.write(str.encode(b))
                     self.controller.connection.flush()
                 v = self.controller.connection.readline().decode('Latin-1')
-                print(v)
                 if '*TACT ' in v:
                     self.data.append(float(v[5:12]))
+                    print(f'Temperature: {float(v[5:12])}°C')
                     self.time.append(timev)
                 if '*IOUT ' in v:
-                    self.current.append(float(v[9:15].replace('A','')))
+                    c = float(v[9:15].replace('A',''))
+                    self.current.append(c)
+                    print(f'Current: {c}A')
         if self.time[-1] > 20 and self.controller.graphFold:
             self.r = self.time[-1]-20
         self.line.set_data(self.time, self.data)
@@ -189,10 +193,11 @@ class StartPage(LabelFrame):
         m = self.controller.temp.get().split(' /')
         v = 0
         try:
-            v = float(self.entry.get())
+            v = max(min(float(self.entry.get()), float(m[1])), float(m[0]))
         except ValueError:
             v = max(min(self.sent_data_value, float(m[1])), float(m[0]))
         self.sent_data_value = max(min(v, float(m[1])), float(m[0]))
+        print(f'Set Temperatur: {self.sent_data_value}°C')
         if self.controller.connected:
             self.controller.connection.write(str.encode(f'*SETTPRS{self.sent_data_value};'))
         self.sent_data_line.set_ydata([self.sent_data_value])
@@ -227,12 +232,21 @@ class Options(Toplevel):
         
         self.v = IntVar()
         self.fold = Checkbutton(self,variable=self.v,onvalue=True,offvalue=False,command=self.change())
+        self.fold.grid(row=3,column=1,sticky='w')
+        Label(self,text='Contineous Graph').grid(row=3,column=0)
         
         self.p = Scale(self,orient=HORIZONTAL)
+        self.p.grid(row=4,column=0)
+        Label(self,text='P-Cofficions').grid(row=4,column=1,sticky='w')
         self.i = Scale(self,orient=HORIZONTAL)
+        self.i.grid(row=5,column=0)
+        Label(self,text='I-Cofficions').grid(row=5,column=1,sticky='w')
         self.d = Scale(self,orient=HORIZONTAL)
+        self.d.grid(row=6,column=0)
+        Label(self,text='D-Cofficions').grid(row=6,column=1,sticky='w')
         
         self.save = Button(self,text='Save',command=self.Save())
+        self.save.grid(row=7,columnspan=2)
 
         for widget in self.winfo_children():
             widget.grid_configure(padx=5, pady=2)
@@ -240,13 +254,14 @@ class Options(Toplevel):
     def change(self):
         self.controller.graphFold = self.v.get()
     def Save(self):
-        self.controller.connection.write(str.encode(f'*;'))
+        if self.controller.connected:
+            self.controller.connection.write(str.encode(f'*SETCK{self.p.get()} {self.i.get()} {self.d.get()};'))
 class StreamToFunction:
     def __init__(self, func):
         self.func = func
 
     def write(self, message):
-        if message.strip():  # Ignore empty messages (like newlines)
+        if message.strip():
             self.func(message)
     def flush(self):
         pass
@@ -258,7 +273,6 @@ if __name__ == "__main__":
     menu = Menu(window,background='#F0F0F0')
     window.config(menu=menu)
     fileMenu = Menu(menu,tearoff=0)
-    fileMenu.add_command(label="Graph", command=lambda: window.show_frame(StartPage))
     fileMenu.add_command(label="Options", command=lambda:Options(window.container,window))
     fileMenu.add_command(label="Save & Exit", command=lambda: window.on_closing())
     menu.add_cascade(label="File", menu=fileMenu)
