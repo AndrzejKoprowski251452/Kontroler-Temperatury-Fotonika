@@ -110,24 +110,25 @@ class StartPage(LabelFrame):
         self.r = 1
         
         self.entry = Entry(self, validate="key", validatecommand=(controller.register(self.validate_entry), '%P'))
+        self.entry.bind("<Return>",lambda e:self.send_serial_data())
         self.entry.grid(row=0, column=1)
 
         self.send_button = Button(self, text="Send Data", command=self.send_serial_data)
-        self.send_button.grid(row=0, column=2,sticky='w')
+        self.send_button.grid(row=1, column=1)
 
         self.last_data_label = Label(self)
         self.last_data_label.grid(row=1, column=2,sticky='w')
 
         self.set_data_label = Label(self,text=f"Set Temp. : {self.sent_data_value}°C")
-        self.set_data_label.grid(row=1, column=1)
+        self.set_data_label.grid(row=0, column=2,sticky='w')
         
         self.current_off_v = IntVar()
         self.current_off_v.set(config['current_off'])
         self.current_off = Checkbutton(self,variable=self.current_off_v,onvalue=True,offvalue=False,command=self.change_current)
-        self.current_off.grid(row=0,column=3)
+        self.current_off.grid(row=0,column=2,sticky='e')
         
-        self.current_off_text = Label(self,text=f"Heating {bool(self.current_off_v.get())}")
-        self.current_off_text.grid(row=1,column=3)
+        self.current_off_text = Label(self,text=f"Current flowing: {bool(self.current_off_v.get())}")
+        self.current_off_text.grid(row=0,column=3,sticky='w')
 
         self.measure_time = Label(self)
         self.measure_time.grid(row=0, column=4)
@@ -150,10 +151,10 @@ class StartPage(LabelFrame):
         self.current_data_line, = self.ax2.plot(self.time,self.current, 'orange')
         maxv = float(controller.temp.get().split(' /')[1])
         minv = float(controller.temp.get().split(' /')[0])
-        self.last_data_text = self.ax1.text(0, 0, "0", ha='left', va='bottom', fontsize=8, color='red')
-        self.last_current_text = self.ax2.text(0, 0, "0", ha='left', va='bottom', fontsize=8, color='orange')
-        self.up_range_text = self.ax1.text(self.time[-1]*0.8, maxv, f"min: {maxv:.3f}°C", ha='left', va='bottom', fontsize=8, color='grey')
-        self.down_range_text = self.ax1.text(self.time[-1]*0.8, minv, f"max: {minv:.3f}°C", ha='left', va='bottom', fontsize=8, color='grey')
+        self.last_data_text = self.ax1.text(0, 0, "0", ha='right', va='bottom', fontsize=8, color='red')
+        self.last_current_text = self.ax2.text(0, 0, "0", ha='right', va='bottom', fontsize=8, color='orange')
+        self.up_range_text = self.ax1.text(self.time[-1]*0.8, maxv, f"min: {maxv:.3f}°C", ha='right', va='top', fontsize=8, color='grey')
+        self.down_range_text = self.ax1.text(self.time[-1]*0.8, minv, f"max: {minv:.3f}°C", ha='right', va='bottom', fontsize=8, color='grey')
         self.up_range = self.ax1.axhline(y=maxv, color='grey', linestyle='--')
         self.down_range = self.ax1.axhline(y=minv, color='grey', linestyle='--')
         self.sent_data_line = self.ax1.axhline(y=self.sent_data_value, color='r', linestyle='--')
@@ -166,7 +167,7 @@ class StartPage(LabelFrame):
         config['current_off'] = bool(self.current_off_v.get())
         with open('config.json', "w") as config_file:
             json.dump(config, config_file)
-        self.current_off_text.config(text=f"Heating {bool(self.current_off_v.get())}")
+        self.current_off_text.config(text=f"Current flowing: {bool(self.current_off_v.get())}")
         
     def console_data(self,f):
         self.console.insert(INSERT, f'{(time.time() - self.time_start):.2f}: {f}\n')
@@ -235,9 +236,11 @@ class StartPage(LabelFrame):
         except ValueError:
             v = max(min(self.sent_data_value, float(m[1])), float(m[0]))
         self.sent_data_value = max(min(v, float(m[1])), float(m[0]))
-        print(f'Set Temperatur: {self.sent_data_value}°C')
         if self.controller.connected:
             self.controller.connection.write(str.encode(f'*SETTPRS{self.sent_data_value};'))
+            print(f'Set Temperatur: {self.sent_data_value}°C')
+        else:
+            print("No divice connected")
         self.sent_data_line.set_ydata([self.sent_data_value])
         self.up_range.set_ydata([float(m[1])])
         self.down_range.set_ydata([float(m[0])])
