@@ -1,1 +1,1 @@
-{"port": "9600", "temp_range": "-10 /+50", "fold": true, "pid": [13, 20, 0], "current_off": false}
+{"port": "9600", "temp_range": "-10 /+50", "fold": false, "pid": [6, 7, 4], "current_off": false}
