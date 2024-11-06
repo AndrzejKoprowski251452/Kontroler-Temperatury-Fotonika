@@ -53,7 +53,6 @@ class App(Tk):
         self.after(50, self.update_graph)
         
     def on_closing(self):
-        self.connection.write(str.encode('a'))
         answer = messagebox.askquestion("Warning", "Do you want to save the data?", icon="warning")
         if answer == "yes":
             dir = filedialog.askdirectory() or None
