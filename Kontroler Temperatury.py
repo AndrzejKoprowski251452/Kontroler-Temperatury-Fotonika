@@ -38,6 +38,7 @@ class App(Tk):
         self.frame.tkraise()
         
         sys.stdout = StreamToFunction(self.frame.console_data)
+        sys.stderr = StreamToFunction(self.frame.console_data)
 
         try:
             self.connection = serial.Serial("COM4",int(self.port.get()),timeout=0.1)
@@ -55,6 +56,11 @@ class App(Tk):
     def on_closing(self):
         answer = messagebox.askquestion("Warning", "Do you want to save the data?", icon="warning")
         if answer == "yes":
+            if self.frame.start != 0:
+                self.frame.stop = len(self.frame.data)
+                print(f'Test Stop: {self.frame.time[self.frame.stop]}')
+            if self.connected:
+                self.connection.write(str.encode('a'))
             dir = filedialog.askdirectory() or None
             if dir == None:
                 return 
@@ -71,8 +77,11 @@ class App(Tk):
             self.frame.fig.savefig(save_path)
             json_path = os.path.join(dir, "data.json")
             with open(json_path, "w") as json_file:
-                json.dump({"temp":self.frame.data,"cur":self.frame.current,"time":self.frame.time}, json_file,indent=4)
-        window.destroy()
+                json.dump({"temp":self.frame.data[self.frame.start:self.frame.stop],"cur":self.frame.current[self.frame.start:self.frame.stop],"time":self.frame.time[self.frame.start:self.frame.stop]}, json_file,indent=4)
+        if self.frame.stop == 0:
+            window.destroy()
+        else:
+            self.frame.start = 0
         
     def import_config(self):
         global config
@@ -107,6 +116,8 @@ class StartPage(LabelFrame):
         self.buffor = ['*GETTPRS;','*GETTACT;','*GETIOUT;','A']
         self.time_start = time.time()
         self.time_change = time.time()
+        self.start = 0
+        self.stop = 0
         self.r = 1
         
         self.entry = Entry(self, validate="key", validatecommand=(controller.register(self.validate_entry), '%P'))
@@ -115,6 +126,12 @@ class StartPage(LabelFrame):
 
         self.send_button = Button(self, text="Send Data", command=self.send_serial_data)
         self.send_button.grid(row=1, column=1)
+        
+        self.start_button = Button(self, text="Start", command=self.start_collect)
+        self.start_button.grid(row=1, column=2,sticky='e')
+        
+        self.stop_button = Button(self, text="Stop", command=self.controller.on_closing)
+        self.stop_button.grid(row=1, column=3,sticky='w')
 
         self.last_data_label = Label(self)
         self.last_data_label.grid(row=1, column=2,sticky='w')
@@ -173,28 +190,12 @@ class StartPage(LabelFrame):
         self.console.insert(INSERT, f'{(time.time() - self.time_start):.2f}: {f}\n')
         self.console.see("end")
         
+    def start_collect(self):
+        self.start = len(self.data)
+        print(f'Test Start: {self.time[self.start]}')
+        
     def send_info(self):
         if self.controller.connected:
-            # val = []
-            # a = []
-            # for b in self.buffor:
-            #     match b:
-            #         case '*GETTPRS;':
-            #             x = '*TPRS '
-            #         case '*GETTACT;':
-            #             x = '*TACT '
-            #         case '*GETIOUT;':
-            #             x = '*IOUT '
-            #     while x not in a:
-            #         if not self.controller.connection.in_waiting:
-            #             self.controller.connection.write(str.encode(b))
-            #         v = self.controller.connection.readline().decode('Latin-1')
-            #         if x in v:
-            #             val.append(v[:14])
-            #             a.append(v[:6])
-            #             self.controller.connection.flush()
-            # print(val)
-            
             for b in self.buffor:
                 if not self.controller.connection.in_waiting:
                     self.controller.connection.write(str.encode(b))
@@ -210,7 +211,7 @@ class StartPage(LabelFrame):
                         config['current_off'] = True 
                     else:
                         config['current_off'] = bool(self.current_off_v.get())
-                if '*IOUT ' in v:
+                if '*IOUT ' in v and len(self.data)==len(self.current):
                     self.controller.connection.flush()
                     c = float(v[9:15].replace('A',''))
                     self.current.append(c)
@@ -237,8 +238,6 @@ class StartPage(LabelFrame):
             self.ax1.set_ylim(min(self.data) - 20, max(self.data) + 20)
             self.ax2.set_xlim(self.r, self.time[-1])
             self.ax2.set_ylim(min(self.current) - 20, max(self.current) + 20)
-        #else:
-            #print(len(self.time),len(self.current))
         maxv = float(min(float(self.controller.temp.get().split(' /')[1]), max(self.data) + 20))
         minv = float(max(float(self.controller.temp.get().split(' /')[0]), min(self.data) - 20))
         self.down_range_text.set_position((self.time[-1], maxv))
@@ -264,7 +263,6 @@ class StartPage(LabelFrame):
             v = max(min(self.sent_data_value, float(m[1])), float(m[0]))
         self.sent_data_value = max(min(v, float(m[1])), float(m[0]))
         if self.controller.connected:
-            #self.buffor.append(f'*SETTPRS{self.sent_data_value};')
             self.controller.connection.write(str.encode(f'*SETTPRS{self.sent_data_value};'))
             print(f'Set Temperatur: {self.sent_data_value}°C')
         else:
