@@ -40,7 +40,7 @@ class App(Tk):
         sys.stdout = StreamToFunction(self.frame.console_data)
 
         try:
-            self.connection = serial.Serial("COM4",int(self.port.get()),timeout=0)
+            self.connection = serial.Serial("COM4",int(self.port.get()),timeout=0.1)
             self.connected = True
         except:
             self.connected = False
@@ -104,7 +104,7 @@ class StartPage(LabelFrame):
         self.current = [0]
         self.time = [0]
         self.sent_data_value = 20.0
-        self.buffor = ['*GETTACT;','*GETIOUT;','A']
+        self.buffor = ['*GETTPRS;','*GETTACT;','*GETIOUT;','A']
         self.time_start = time.time()
         self.time_change = time.time()
         self.r = 1
@@ -141,7 +141,7 @@ class StartPage(LabelFrame):
         
         for widget in self.winfo_children():
             widget.grid_configure(padx=5, pady=5,rowspan=1)
-
+            
         self.fig = Figure(figsize=(5, 5), dpi=100)
         self.fig.patch.set_facecolor('#F0F0F0')
         self.ax1 = self.fig.add_subplot(1,1,1)
@@ -164,42 +164,66 @@ class StartPage(LabelFrame):
         self.canvas.draw()
         self.canvas.get_tk_widget().grid(row=0, column=0, sticky="nsew",rowspan=20)
     def change_current(self):
-        config['current_off'] = bool(self.current_off_v.get())
+        config['current_off'] = not bool(self.current_off_v.get())
         with open('config.json', "w") as config_file:
             json.dump(config, config_file)
-        self.current_off_text.config(text=f"Current flowing: {bool(self.current_off_v.get())}")
+        self.current_off_text.config(text=f"Current flowing: {not bool(self.current_off_v.get())}")
         
     def console_data(self,f):
         self.console.insert(INSERT, f'{(time.time() - self.time_start):.2f}: {f}\n')
         self.console.see("end")
-
-    def update_graph(self):
-        timev = f"{(time.time() - self.time_start):.2f}"
+        
+    def send_info(self):
         if self.controller.connected:
-            if config['current_off']:
-                self.buffor = ['a']
-            elif 'a' in self.buffor and not config['current_off']:
-                self.buffor = ['*GETTACT;','*GETIOUT;','A']
+            # val = []
+            # a = []
+            # for b in self.buffor:
+            #     match b:
+            #         case '*GETTPRS;':
+            #             x = '*TPRS '
+            #         case '*GETTACT;':
+            #             x = '*TACT '
+            #         case '*GETIOUT;':
+            #             x = '*IOUT '
+            #     while x not in a:
+            #         if not self.controller.connection.in_waiting:
+            #             self.controller.connection.write(str.encode(b))
+            #         v = self.controller.connection.readline().decode('Latin-1')
+            #         if x in v:
+            #             val.append(v[:14])
+            #             a.append(v[:6])
+            #             self.controller.connection.flush()
+            # print(val)
+            
             for b in self.buffor:
                 if not self.controller.connection.in_waiting:
                     self.controller.connection.write(str.encode(b))
                 v = self.controller.connection.readline().decode('Latin-1')
+                if '*TPRS ' in v:
+                    self.controller.connection.flush()
+                    self.sent_data_value = float(v[5:12])
                 if '*TACT ' in v:
+                    self.controller.connection.flush()
                     self.data.append(float(v[5:12]))
-                    #print(f'Temperature: {v[5:12]}C')
+                    print(f'Temperature: {v[5:12]}C')
                     if self.data[-1] >= float(self.controller.temp.get().split(' /')[1]):
-                        config['current_off'] = True
+                        config['current_off'] = True 
                     else:
-                        config['current_off'] = False
+                        config['current_off'] = bool(self.current_off_v.get())
                 if '*IOUT ' in v:
+                    self.controller.connection.flush()
                     c = float(v[9:15].replace('A',''))
                     self.current.append(c)
-                    #print(f'Current: {c}A')
-                #if '*CK ' in v and "*GETCK;" in self.buffor:
-                    #self.controller.v = v[3:].split(' ')
-                self.controller.connection.flush()
-                self.buffor = self.buffor[:2]
-                
+                    print(f'Current: {c}A')
+        if config['current_off']:
+            self.buffor = ['*GETTACT;','*GETIOUT;','a']
+        else:
+            self.buffor = ['*GETTACT;','*GETIOUT;','A']
+
+    def update_graph(self):
+        timev = f"{(time.time() - self.time_start):.2f}"
+        self.send_info()
+        self.current = self.current[:len(self.data)]
         if len(self.data) > len(self.time):
             self.time.append(float(timev))
         if self.time[-1] > 20 and self.controller.graphFold:
@@ -207,14 +231,14 @@ class StartPage(LabelFrame):
         elif not self.controller.graphFold:
             self.r = 0.1
         self.line.set_data(self.time, self.data)
-        if len(self.time) == len(self.current) == len(self.data):
+        if len(self.time) == len(self.current):
             self.current_data_line.set_data(self.time,self.current)
             self.ax1.set_xlim(self.r, self.time[-1])
             self.ax1.set_ylim(min(self.data) - 20, max(self.data) + 20)
             self.ax2.set_xlim(self.r, self.time[-1])
             self.ax2.set_ylim(min(self.current) - 20, max(self.current) + 20)
-        else:
-            print("t",len(self.time),"c",len(self.current),"d",len(self.data),len(self.time) == len(self.current) == len(self.data))
+        #else:
+            #print(len(self.time),len(self.current))
         maxv = float(min(float(self.controller.temp.get().split(' /')[1]), max(self.data) + 20))
         minv = float(max(float(self.controller.temp.get().split(' /')[0]), min(self.data) - 20))
         self.down_range_text.set_position((self.time[-1], maxv))
@@ -240,6 +264,7 @@ class StartPage(LabelFrame):
             v = max(min(self.sent_data_value, float(m[1])), float(m[0]))
         self.sent_data_value = max(min(v, float(m[1])), float(m[0]))
         if self.controller.connected:
+            #self.buffor.append(f'*SETTPRS{self.sent_data_value};')
             self.controller.connection.write(str.encode(f'*SETTPRS{self.sent_data_value};'))
             print(f'Set Temperatur: {self.sent_data_value}°C')
         else:

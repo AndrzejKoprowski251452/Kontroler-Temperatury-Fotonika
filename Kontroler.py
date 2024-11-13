@@ -152,6 +152,9 @@ class StartPage(LabelFrame):
         self.canvas = FigureCanvasTkAgg(self.fig, master=self)
         self.canvas.draw()
         self.canvas.get_tk_widget().grid(row=0, column=0, sticky="nsew",rowspan=20)
+        
+        #if self.controller.connected:
+            #self.send_serial_data()
                 
     def console_data(self,f):
         self.console.insert(INSERT, f'{(time.time() - self.time_change):.2f}: {f}\n')
@@ -161,8 +164,8 @@ class StartPage(LabelFrame):
         timev = f"{(time.time() - self.time_start):.2f}"
         if self.controller.connected:
             if config['current_off']:
-                self.buffor = ['a']
-            elif 'a' in self.buffor and not config['current_off']:
+                self.buffor = ['*GETTPRS;','*GETTACT;','a']
+            else:
                 self.buffor = ['*GETTPRS;','*GETTACT;','A']
             for b in self.buffor:
                 if not self.controller.connection.in_waiting:
