@@ -38,10 +38,10 @@ class App(Tk):
         self.frame.tkraise()
         
         sys.stdout = StreamToFunction(self.frame.console_data)
-        sys.stderr = StreamToFunction(self.frame.console_data)
+        #sys.stderr = StreamToFunction(self.frame.console_data)
 
         try:
-            self.connection = serial.Serial("COM4",int(self.port.get()),timeout=0.1)
+            self.connection = serial.Serial("COM4",int(self.port.get()),timeout=0.5)
             self.connected = True
         except:
             self.connected = False
@@ -53,11 +53,11 @@ class App(Tk):
         self.frame.update_graph()
         self.after(10, self.update_graph)
         
-    def on_closing(self):
+    def on_closing(self,c=True):
         answer = messagebox.askquestion("Warning", "Do you want to save the data?", icon="warning")
         if answer == "yes":
             if self.frame.start != 0:
-                self.frame.stop = len(self.frame.data)
+                self.frame.stop = len(self.frame.data)-1
                 print(f'Test Stop: {self.frame.time[self.frame.stop]}')
             if self.connected:
                 self.connection.write(str.encode('a'))
@@ -78,7 +78,7 @@ class App(Tk):
             json_path = os.path.join(dir, "data.json")
             with open(json_path, "w") as json_file:
                 json.dump({"temp":self.frame.data[self.frame.start:self.frame.stop],"cur":self.frame.current[self.frame.start:self.frame.stop],"time":self.frame.time[self.frame.start:self.frame.stop]}, json_file,indent=4)
-        if self.frame.stop == 0:
+        if c:
             window.destroy()
         else:
             self.frame.start = 0
@@ -130,7 +130,7 @@ class StartPage(LabelFrame):
         self.start_button = Button(self, text="Start", command=self.start_collect)
         self.start_button.grid(row=1, column=2,sticky='e')
         
-        self.stop_button = Button(self, text="Stop", command=self.controller.on_closing)
+        self.stop_button = Button(self, text="Stop", command=lambda:self.controller.on_closing(False))
         self.stop_button.grid(row=1, column=3,sticky='w')
 
         self.last_data_label = Label(self)
@@ -181,17 +181,17 @@ class StartPage(LabelFrame):
         self.canvas.draw()
         self.canvas.get_tk_widget().grid(row=0, column=0, sticky="nsew",rowspan=20)
     def change_current(self):
-        config['current_off'] = not bool(self.current_off_v.get())
+        config['current_off'] = bool(self.current_off_v.get())
         with open('config.json', "w") as config_file:
             json.dump(config, config_file)
-        self.current_off_text.config(text=f"Current flowing: {not bool(self.current_off_v.get())}")
+        self.current_off_text.config(text=f"Current flowing: {bool(self.current_off_v.get())}")
         
     def console_data(self,f):
         self.console.insert(INSERT, f'{(time.time() - self.time_start):.2f}: {f}\n')
         self.console.see("end")
         
     def start_collect(self):
-        self.start = len(self.data)
+        self.start = len(self.data)-1
         print(f'Test Start: {self.time[self.start]}')
         
     def send_info(self):
@@ -200,23 +200,22 @@ class StartPage(LabelFrame):
                 if not self.controller.connection.in_waiting:
                     self.controller.connection.write(str.encode(b))
                 v = self.controller.connection.readline().decode('Latin-1')
+                print(v)
                 if '*TPRS ' in v:
                     self.controller.connection.flush()
                     self.sent_data_value = float(v[5:12])
                 if '*TACT ' in v:
                     self.controller.connection.flush()
                     self.data.append(float(v[5:12]))
-                    print(f'Temperature: {v[5:12]}C')
+                    #print(f'Temperature: {v[5:12]}C')
                     if self.data[-1] >= float(self.controller.temp.get().split(' /')[1]):
-                        config['current_off'] = True 
-                    else:
-                        config['current_off'] = bool(self.current_off_v.get())
-                if '*IOUT ' in v and len(self.data)==len(self.current):
+                        config['current_off'] = False
+                if '*IOUT ' in v and len(self.data) > len(self.current):
                     self.controller.connection.flush()
                     c = float(v[9:15].replace('A',''))
                     self.current.append(c)
-                    print(f'Current: {c}A')
-        if config['current_off']:
+                    #print(f'Current: {c}A')
+        if not config['current_off']:
             self.buffor = ['*GETTACT;','*GETIOUT;','a']
         else:
             self.buffor = ['*GETTACT;','*GETIOUT;','A']
@@ -224,7 +223,6 @@ class StartPage(LabelFrame):
     def update_graph(self):
         timev = f"{(time.time() - self.time_start):.2f}"
         self.send_info()
-        self.current = self.current[:len(self.data)]
         if len(self.data) > len(self.time):
             self.time.append(float(timev))
         if self.time[-1] > 20 and self.controller.graphFold:
@@ -350,7 +348,7 @@ class StreamToFunction:
 if __name__ == "__main__":
     window = App()
     window.title("Temperature Controller")
-    window.protocol("WM_DELETE_WINDOW",window.on_closing)
+    window.protocol("WM_DELETE_WINDOW",lambda:window.on_closing())
 
     menu = Menu(window,background='#F0F0F0')
     window.config(menu=menu)
