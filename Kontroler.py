@@ -1,5 +1,5 @@
 from tkinter import *
-from tkinter import messagebox, filedialog
+from tkinter import messagebox, filedialog, ttk
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import numpy as np
@@ -64,9 +64,10 @@ def get_default_serial_port():
 class SerialCommunicator:
     """Klasa odpowiedzialna za komunikację z urządzeniem w osobnym wątku"""
     
-    def __init__(self, port=None, baud_rate=9600):
+    def __init__(self, port=None, baud_rate=9600, console_func=None):
         self.port = port or get_default_serial_port()
         self.baud_rate = baud_rate
+        self.console_func = console_func or (lambda x: None)
         self.connection = None
         self.connected = False
         self.running = False
@@ -93,25 +94,25 @@ class SerialCommunicator:
         try:
             # Sprawdź czy port istnieje (ważne na Linuxie)
             if not platform.system().lower().startswith('win') and not os.path.exists(self.port):
-                print(f"Port {self.port} nie istnieje")
+                self.console_func(f"Port {self.port} nie istnieje")
                 return False
                 
             self.connection = serial.Serial(self.port, self.baud_rate, timeout=0.5)
             self.connected = True
-            print(f"Połączono z urządzeniem na porcie {self.port}")
+            self.console_func(f"Połączono z urządzeniem na porcie {self.port}")
             return True
         except serial.SerialException as e:
             self.connected = False
-            print(f"Błąd połączenia szeregowego z portem {self.port}: {e}")
+            self.console_func(f"Błąd połączenia szeregowego z portem {self.port}: {e}")
             return False
         except PermissionError as e:
             self.connected = False
-            print(f"Brak uprawnień do portu {self.port}: {e}")
-            print("Na Linuxie spróbuj: sudo usermod -a -G dialout $USER")
+            self.console_func(f"Brak uprawnień do portu {self.port}: {e}")
+            self.console_func("Na Linuxie spróbuj: sudo usermod -a -G dialout $USER")
             return False
         except Exception as e:
             self.connected = False
-            print(f"Błąd połączenia z portem {self.port}: {e}")
+            self.console_func(f"Błąd połączenia z portem {self.port}: {e}")
             return False
     
     def disconnect(self):
@@ -122,7 +123,7 @@ class SerialCommunicator:
         if self.connection:
             self.connection.close()
         self.connected = False
-        print("Rozłączono z urządzeniem")
+        self.console_func("Rozłączono z urządzeniem")
     
     def start_communication(self):
         """Rozpoczyna komunikację w osobnym wątku"""
@@ -132,7 +133,7 @@ class SerialCommunicator:
         self.running = True
         self.thread = threading.Thread(target=self._communication_loop, daemon=True)
         self.thread.start()
-        print("Rozpoczęto komunikację w tle")
+        self.console_func("Rozpoczęto komunikację w tle")
         return True
     
     def _communication_loop(self):
@@ -152,7 +153,7 @@ class SerialCommunicator:
                 except queue.Empty:
                     pass
                 except Exception as e:
-                    print(f"Błąd wysyłania komendy: {e}")
+                    self.console_func(f"Błąd wysyłania komendy: {e}")
                     error_count += 1
                     continue
                 
@@ -165,7 +166,7 @@ class SerialCommunicator:
                         command_index = (command_index + 1) % len(commands)
                         
                 except Exception as e:
-                    print(f"Błąd wysyłania standardowego zapytania: {e}")
+                    self.console_func(f"Błąd wysyłania standardowego zapytania: {e}")
                     error_count += 1
                     continue
                 
@@ -178,21 +179,21 @@ class SerialCommunicator:
                             error_count = 0  # Reset licznika błędów po udanej komunikacji
                             
                 except Exception as e:
-                    print(f"Błąd odbioru danych: {e}")
+                    self.console_func(f"Błąd odbioru danych: {e}")
                     error_count += 1
                     continue
                 
                 time.sleep(0.1)  # Krótka pauza
                 
             except Exception as e:
-                print(f"Nieoczekiwany błąd komunikacji: {e}")
+                self.console_func(f"Nieoczekiwany błąd komunikacji: {e}")
                 error_count += 1
                 
         if error_count >= max_errors:
-            print(f"Zbyt wiele błędów komunikacji ({error_count}), zatrzymywanie...")
+            self.console_func(f"Zbyt wiele błędów komunikacji ({error_count}), zatrzymywanie...")
             self.connected = False
         
-        print("Zakończono pętlę komunikacji")
+        self.console_func("Zakończono pętlę komunikacji")
     
     def _process_response(self, response):
         """Przetwarza odpowiedzi z urządzenia"""
@@ -227,15 +228,15 @@ class SerialCommunicator:
                 })
                 
         except (ValueError, IndexError) as e:
-            print(f"Błąd parsowania odpowiedzi '{response}': {e}")
+            self.console_func(f"Błąd parsowania odpowiedzi '{response}': {e}")
     
     def send_command(self, command):
         """Dodaje komendę do kolejki wysyłania"""
         if self.connected:
             self.command_queue.put(command)
-            print(f"Dodano komendę do kolejki: {command}")
+            self.console_func(f"Dodano komendę do kolejki: {command}")
         else:
-            print("Brak połączenia - komenda nie została wysłana")
+            self.console_func("Brak połączenia - komenda nie została wysłana")
     
     def get_latest_data(self):
         """Pobiera najnowsze dane z kolejki"""
@@ -281,21 +282,22 @@ class App(Tk):
         self.v = config['pid']
         self.graphFold = config['fold']
         
-        # Inicjalizacja komunikacji
-        selected_port = self.serial_port.get()
-        self.communicator = SerialCommunicator(port=selected_port, baud_rate=int(self.port.get()))
-        self.connected = self.communicator.connect()
-        
         # GUI
         self.frame = StartPage(self.container, self)
         self.frame.grid(row=0, column=0, sticky="nsew")
         self.frame.tkraise()
         
+        # Inicjalizacja komunikacji (po utworzeniu GUI)
+        selected_port = self.serial_port.get()
+        self.communicator = SerialCommunicator(port=selected_port, baud_rate=int(self.port.get()), 
+                                             console_func=self.frame.console_data)
+        self.connected = self.communicator.connect()
+        
         # Rozpocznij komunikację w tle
         if self.connected:
             self.communicator.start_communication()
         else:
-            print('Brak połączenia z urządzeniem')
+            self.console_data('Brak połączenia z urządzeniem')
 
         # Uruchom aktualizację GUI
         self.update_graph()
@@ -314,7 +316,7 @@ class App(Tk):
             self.frame.update_graph()
             
         except Exception as e:
-            print(f"Błąd aktualizacji wykresu: {e}")
+            self.console_data(f"Błąd aktualizacji wykresu: {e}")
         
         self.after(100, self.update_graph)  # Zwiększony interwał
         
@@ -328,7 +330,7 @@ class App(Tk):
                 
                 if self.frame.start != 0 and len(all_data['time']) > 0:
                     self.frame.stop = len(all_data['time']) - 1
-                    print(f'Test Stop: {all_data["time"][self.frame.stop]:.2f}s')
+                    self.console_data(f'Test Stop: {all_data["time"][self.frame.stop]:.2f}s')
                 
                 # Zatrzymaj urządzenie
                 if self.connected:
@@ -354,7 +356,7 @@ class App(Tk):
                 # Zapisz wykres
                 plot_path = os.path.join(save_dir, "plot.png")
                 self.frame.fig.savefig(plot_path, dpi=300, bbox_inches='tight')
-                print(f"Wykres zapisany: {plot_path}")
+                self.console_data(f"Wykres zapisany: {plot_path}")
                 
                 # Przygotuj dane do zapisu
                 start_idx = self.frame.start if self.frame.start != 0 else 0
@@ -376,7 +378,7 @@ class App(Tk):
                 json_path = os.path.join(save_dir, "data.json")
                 with open(json_path, "w") as json_file:
                     json.dump(save_data, json_file, indent=4)
-                print(f"Dane zapisane: {json_path}")
+                self.console_data(f"Dane zapisane: {json_path}")
                 
                 # Zapisz log tekstowy
                 log_path = os.path.join(save_dir, "measurement_log.txt")
@@ -389,7 +391,7 @@ class App(Tk):
                 messagebox.showinfo("Sukces", f"Dane zapisane w: {save_dir}")
                 
             except Exception as e:
-                print(f"Błąd zapisywania danych: {e}")
+                self.console_data(f"Błąd zapisywania danych: {e}")
                 messagebox.showerror("Błąd", f"Nie udało się zapisać danych: {e}")
         
         if c:
@@ -435,11 +437,11 @@ class App(Tk):
             with open('config.json', 'w') as config_file:
                 json.dump(config, config_file, indent=4)
             
-            print(f"Zaimportowano konfigurację z: {file_path}")
+            self.console_data(f"Zaimportowano konfigurację z: {file_path}")
             messagebox.showinfo("Sukces", "Konfiguracja została zaimportowana")
             
         except Exception as e:
-            print(f"Błąd importu konfiguracji: {e}")
+            self.console_data(f"Błąd importu konfiguracji: {e}")
             messagebox.showerror("Błąd", f"Nie udało się zaimportować konfiguracji:\n{e}")
 
     def export_config(self):
@@ -467,11 +469,11 @@ class App(Tk):
             with open(file_path, "w") as config_file:
                 json.dump(export_data, config_file, indent=4)
             
-            print(f"Wyeksportowano konfigurację do: {file_path}")
+            self.console_data(f"Wyeksportowano konfigurację do: {file_path}")
             messagebox.showinfo("Sukces", f"Konfiguracja została wyeksportowana do:\n{file_path}")
             
         except Exception as e:
-            print(f"Błąd eksportu konfiguracji: {e}")
+            self.console_data(f"Błąd eksportu konfiguracji: {e}")
             messagebox.showerror("Błąd", f"Nie udało się wyeksportować konfiguracji:\n{e}")
 
 class StartPage(LabelFrame):
@@ -485,7 +487,7 @@ class StartPage(LabelFrame):
         self.time = [0]
         self.sent_data_value = 20.0
         
-        # System logów do konsoli - usunięty
+        # Konsola do wyświetlania komunikatów (bez przekierowania stdout)
         
         self.time_start = time.time()
         self.time_change = time.time()
@@ -597,10 +599,10 @@ class StartPage(LabelFrame):
             
             # Wymusza odświeżenie wykresu
             self.canvas.draw()
-            print(f"Zaktualizowano zakresy wykresu: {minv}°C do {maxv}°C")
+            self.console_data(f"Zaktualizowano zakresy wykresu: {minv}°C do {maxv}°C")
             
         except Exception as e:
-            print(f"Błąd aktualizacji zakresów wykresu: {e}")
+            self.console_data(f"Błąd aktualizacji zakresów wykresu: {e}")
     
     def process_new_data(self, new_data_list):
         """Przetwarza nowe dane z komunikatora"""
@@ -626,7 +628,7 @@ class StartPage(LabelFrame):
         # Wyślij komendę do urządzenia
         command = 'A' if config['current_off'] else 'a'
         self.controller.communicator.send_command(command)
-        print(f"Zmiana stanu prądu: {'włączony' if config['current_off'] else 'wyłączony'}")
+        self.console_data(f"Zmiana stanu prądu: {'włączony' if config['current_off'] else 'wyłączony'}")
         
     def console_data(self, message):
         """Dodaje wiadomość do konsoli"""
@@ -637,7 +639,7 @@ class StartPage(LabelFrame):
     def start_collect(self):
         """Rozpoczyna zbieranie danych do analizy"""
         self.start = len(self.data) - 1
-        print(f'Test Start: {self.time[self.start]:.2f}s')
+        self.console_data(f'Test Start: {self.time[self.start]:.2f}s')
         
     def send_serial_data(self):
         """Wysyła dane temperatury do urządzenia"""
@@ -655,7 +657,7 @@ class StartPage(LabelFrame):
         # Wyślij komendę
         command = f'*SETTPRS{self.sent_data_value};'
         self.controller.communicator.send_command(command)
-        print(f'Ustawiono temperaturę: {self.sent_data_value}°C')
+        self.console_data(f'Ustawiono temperaturę: {self.sent_data_value}°C')
         
         # Aktualizuj interfejs
         self.sent_data_line.set_ydata([self.sent_data_value])
@@ -715,7 +717,7 @@ class StartPage(LabelFrame):
             self.canvas.draw_idle()  # Używaj draw_idle() dla lepszej wydajności
             
         except Exception as e:
-            print(f"Błąd aktualizacji wykresu: {e}")
+            self.console_data(f"Błąd aktualizacji wykresu: {e}")
 
     def validate_entry(self, value):
         """Waliduje wprowadzoną wartość"""
@@ -740,9 +742,11 @@ class Options(Toplevel):
         self.portMenu = OptionMenu(self, controller.port, *controller.port_choice)
         self.portMenu.grid(row=1, column=0)
         
-        # Menu wyboru portu szeregowego
-        self.serialPortMenu = OptionMenu(self, controller.serial_port, *controller.available_ports)
-        self.serialPortMenu.grid(row=1, column=1)
+        # Combobox wyboru portu szeregowego (lepszy od OptionMenu)
+        self.serialPortCombo = ttk.Combobox(self, textvariable=controller.serial_port, 
+                                           values=controller.available_ports, 
+                                           state="readonly", width=15)
+        self.serialPortCombo.grid(row=1, column=1)
         
         # Przycisk odświeżenia portów
         self.refresh_ports_btn = Button(self, text="Odśwież porty", command=self.refresh_ports)
@@ -803,19 +807,18 @@ class Options(Toplevel):
             new_ports = get_available_serial_ports()
             self.controller.available_ports = new_ports
             
-            # Usuń stare menu
-            self.serialPortMenu.destroy()
+            # Aktualizuj Combobox
+            self.serialPortCombo['values'] = new_ports
             
-            # Utwórz nowe menu
-            self.serialPortMenu = OptionMenu(self, self.controller.serial_port, *new_ports)
-            self.serialPortMenu.grid(row=1, column=1)
+            # Jeśli aktualny port nie jest na liście, ustaw pierwszy dostępny
+            if self.controller.serial_port.get() not in new_ports and new_ports:
+                self.controller.serial_port.set(new_ports[0])
             
-            print(f"Odświeżono porty: {new_ports}")
-            messagebox.showinfo("Porty", f"Znaleziono porty: {', '.join(new_ports)}")
+            print(f"Odswiezońo porty: {new_ports}")
             
         except Exception as e:
-            print(f"Błąd odświeżania portów: {e}")
-            messagebox.showerror("Błąd", f"Nie udało się odświeżyć portów: {e}")
+            print(f"Bład odswiezania portów: {e}")
+            messagebox.showerror("Bład", f"Nie udao sie odswiezyc portów: {e}")
         
     def Save(self):
         """Zapisuje ustawienia"""
@@ -838,9 +841,6 @@ class Options(Toplevel):
             
             # Forśuj aktualizację wykresów po zmianie ustawień
             self.controller.frame.setup_graph_ranges()
-            
-            print(f"Zapisano konfigurację: PID={self.controller.v}, Port={config['port']}")
-            messagebox.showinfo("Sukces", "Ustawienia zostały zapisane")
             
         except Exception as e:
             print(f"Błąd zapisywania konfiguracji: {e}")
