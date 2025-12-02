@@ -3,9 +3,10 @@
     "temp_range": "-10 /+50",
     "fold": true,
     "pid": [
-        6,
-        7,
-        4
+        6.0,
+        7.0,
+        4.0
     ],
-    "current_off": false
+    "current_off": false,
+    "serial_port": "COM1"
 }

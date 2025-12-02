@@ -338,6 +338,13 @@ class App(Tk):
         else:
             self.console_data('Brak połączenia z urządzeniem')
     
+    def console_data(self, message):
+        """Deleguje wiadomości konsoli do StartPage"""
+        if hasattr(self, 'frame') and hasattr(self.frame, 'console_data'):
+            self.frame.console_data(message)
+        else:
+            print(message)  # Fallback dla wczesnych komunikatów
+    
     def _threaded_gui_update(self):
         """Aktualizacja GUI wywoływana z osobnego wątku"""
         try:
