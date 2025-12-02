@@ -72,8 +72,6 @@ class SerialCommunicator:
         self.connected = False
         self.running = False
         self.thread = None
-        self.gui_update_thread = None
-        self.gui_running = False
         
         # Kolejki do komunikacji między wątkami
         self.data_queue = queue.Queue()
@@ -120,12 +118,9 @@ class SerialCommunicator:
     def disconnect(self):
         """Rozłącza z urządzeniem i zatrzymuje wątki"""
         self.running = False
-        self.gui_running = False
         
         if self.thread:
             self.thread.join(timeout=2)
-        if self.gui_update_thread:
-            self.gui_update_thread.join(timeout=1)
             
         if self.connection:
             self.connection.close()
@@ -142,35 +137,6 @@ class SerialCommunicator:
         self.thread.start()
         self.console_func("Rozpoczęto komunikację w tle")
         return True
-    
-    def start_gui_updates(self, update_callback, interval=0.2):
-        """Rozpoczyna aktualizacje GUI w osobnym wątku"""
-        if self.gui_running:
-            return
-            
-        self.gui_running = True
-        self.update_callback = update_callback
-        self.update_interval = interval
-        self.gui_update_thread = threading.Thread(target=self._gui_update_loop, daemon=True)
-        self.gui_update_thread.start()
-        self.console_func("Rozpoczęto aktualizacje GUI w tle")
-    
-    def stop_gui_updates(self):
-        """Zatrzymuje aktualizacje GUI"""
-        self.gui_running = False
-        if self.gui_update_thread:
-            self.gui_update_thread.join(timeout=1)
-    
-    def _gui_update_loop(self):
-        """Pętla aktualizacji GUI działająca w tle"""
-        while self.gui_running and self.connected:
-            try:
-                if hasattr(self, 'update_callback') and self.update_callback:
-                    self.update_callback()
-                time.sleep(self.update_interval)
-            except Exception as e:
-                self.console_func(f"Błąd aktualizacji GUI: {e}")
-                break
     
     def _communication_loop(self):
         """Główna pętla komunikacji działająca w tle"""
@@ -332,11 +298,28 @@ class App(Tk):
         # Rozpocznij komunikację w tle
         if self.connected:
             self.communicator.start_communication()
-            # Rozpocznij aktualizacje GUI w osobnym wątku
-            self.communicator.start_gui_updates(self._threaded_gui_update, interval=0.15)
-            self.console_data("Połączono z urządzeniem - komunikacja i GUI działają w osobnych wątkach")
+            self.console_data("Połączono z urządzeniem - komunikacja działa w tle")
+            # Rozpocznij aktualizację GUI w głównym wątku
+            self.update_graph()
         else:
             self.console_data('Brak połączenia z urządzeniem')
+    
+    def update_graph(self):
+        """Aktualizuje wykres z danymi z komunikatora"""
+        try:
+            # Pobierz nowe dane z komunikatora
+            new_data = self.communicator.get_latest_data()
+            
+            # Przekaż dane do GUI
+            if new_data:
+                self.frame.process_new_data(new_data)
+                self.frame.update_graph()
+            
+        except Exception as e:
+            self.console_data(f"Błąd aktualizacji wykresu: {e}")
+        
+        # Zaplanuj następną aktualizację
+        self.after(200, self.update_graph)  # 200ms interwał
     
     def console_data(self, message):
         """Deleguje wiadomości konsoli do StartPage"""
@@ -344,25 +327,6 @@ class App(Tk):
             self.frame.console_data(message)
         else:
             print(message)  # Fallback dla wczesnych komunikatów
-    
-    def _threaded_gui_update(self):
-        """Aktualizacja GUI wywoływana z osobnego wątku"""
-        try:
-            # Pobierz nowe dane z komunikatora
-            new_data = self.communicator.get_latest_data()
-            
-            # Przekaż dane do GUI w bezpieczny sposób (thread-safe)
-            if new_data:
-                # Użyj after() do bezpiecznego wywołania w głównym wątku GUI
-                self.after_idle(lambda: self.frame.process_new_data(new_data))
-                self.after_idle(lambda: self.frame.update_graph())
-            
-        except Exception as e:
-            self.console_data(f"Błąd aktualizacji GUI z wątku: {e}")
-
-    def update_graph(self):
-        """Uproszczona metoda - główna logika jest teraz w _threaded_gui_update"""
-        pass  # Ta metoda jest teraz nieaktywna - GUI aktualizuje się przez wątek
         
     def on_closing(self, c=True):
         """Zamknięcie aplikacji z opcją zapisania danych"""
@@ -439,8 +403,7 @@ class App(Tk):
                 messagebox.showerror("Błąd", f"Nie udało się zapisać danych: {e}")
         
         if c:
-            # Zatrzymaj wątki i zamknij komunikację
-            self.communicator.stop_gui_updates()
+            # Zamknij komunikację
             self.communicator.disconnect()
             self.destroy()
         else:
@@ -651,6 +614,9 @@ class StartPage(LabelFrame):
     
     def process_new_data(self, new_data_list):
         """Przetwarza nowe dane z komunikatora"""
+        if new_data_list:
+            self.console_data(f"Otrzymano {len(new_data_list)} nowych punktów danych")
+        
         for data_item in new_data_list:
             current_time = data_item['time']
             
@@ -658,9 +624,11 @@ class StartPage(LabelFrame):
                 self.data.append(data_item['value'])
                 if len(self.time) < len(self.data):
                     self.time.append(current_time)
+                self.console_data(f"Dodano temperaturę: {data_item['value']:.1f}°C w czasie {current_time:.2f}s")
                     
             elif data_item['type'] == 'current':
                 self.current.append(data_item['value'])
+                self.console_data(f"Dodano prąd: {data_item['value']:.3f}A w czasie {current_time:.2f}s")
     
     def change_current(self):
         """Zmienia stan prądu"""
