@@ -7,6 +7,7 @@ import os
 import time
 from datetime import datetime
 import json
+import csv
 import serial
 import serial.tools.list_ports
 import sys
@@ -388,6 +389,25 @@ class App(Tk):
                     json.dump(save_data, json_file, indent=4)
                 self.console_data(f"Dane zapisane: {json_path}")
                 
+                # Zapisz dane CSV
+                csv_path = os.path.join(save_dir, "data.csv")
+                with open(csv_path, "w", newline='', encoding='utf-8') as csv_file:
+                    writer = csv.writer(csv_file, delimiter=';')
+                    
+                    # Nagłówek CSV
+                    writer.writerow(['Czas [s]', 'Temperatura [°C]', 'Prąd [A]'])
+                    
+                    # Dane - synchronizacja przez najkrótszą listę
+                    min_len = min(len(save_data['time']), len(save_data['temperature']), len(save_data['current']))
+                    for i in range(min_len):
+                        writer.writerow([
+                            f"{save_data['time'][i]:.3f}",
+                            f"{save_data['temperature'][i]:.2f}",
+                            f"{save_data['current'][i]:.4f}"
+                        ])
+                
+                self.console_data(f"Dane CSV zapisane: {csv_path}")
+                
                 # Zapisz log tekstowy
                 log_path = os.path.join(save_dir, "measurement_log.txt")
                 with open(log_path, "w") as log_file:
@@ -483,6 +503,54 @@ class App(Tk):
         except Exception as e:
             self.console_data(f"Błąd eksportu konfiguracji: {e}")
             messagebox.showerror("Błąd", f"Nie udało się wyeksportować konfiguracji:\n{e}")
+
+    def export_csv(self):
+        """Eksportuje aktualne dane do pliku CSV"""
+        try:
+            # Sprawdź czy są dane do eksportu
+            all_data = self.communicator.get_all_data()
+            if not all_data['temperature'] or not all_data['time']:
+                messagebox.showwarning("Brak danych", "Brak danych do eksportu. Uruchom pomiar aby zebrać dane.")
+                return
+            
+            file_path = filedialog.asksaveasfilename(
+                title="Zapisz dane jako CSV",
+                defaultextension=".csv",
+                filetypes=[("Pliki CSV", "*.csv"), ("Wszystkie pliki", "*.*")],
+                initialname=f"pomiar_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+            )
+            
+            if not file_path:
+                return
+            
+            with open(file_path, "w", newline='', encoding='utf-8') as csv_file:
+                writer = csv.writer(csv_file, delimiter=';')
+                
+                # Nagłówek z metadanymi
+                writer.writerow(['# Pomiar temperatury - Kontroler Fotonika'])
+                writer.writerow([f'# Data eksportu: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}'])
+                writer.writerow([f'# Liczba pomiarów: {len(all_data["temperature"])}'])
+                writer.writerow([f'# Czas pomiaru: {all_data["time"][-1] - all_data["time"][0]:.2f}s'])
+                writer.writerow([''])  # Pusta linia
+                
+                # Nagłówek kolumn
+                writer.writerow(['Czas [s]', 'Temperatura [°C]', 'Prąd [A]'])
+                
+                # Dane - synchronizacja przez najkrótszą listę
+                min_len = min(len(all_data['time']), len(all_data['temperature']), len(all_data['current']))
+                for i in range(min_len):
+                    writer.writerow([
+                        f"{all_data['time'][i]:.3f}",
+                        f"{all_data['temperature'][i]:.2f}",
+                        f"{all_data['current'][i]:.4f}"
+                    ])
+            
+            self.console_data(f"Dane wyeksportowane do CSV: {file_path}")
+            messagebox.showinfo("Sukces", f"Dane zostały wyeksportowane do:\n{file_path}")
+            
+        except Exception as e:
+            self.console_data(f"Błąd eksportu CSV: {e}")
+            messagebox.showerror("Błąd", f"Nie udało się wyeksportować danych do CSV:\n{e}")
 
 class StartPage(LabelFrame):
     def __init__(self, parent, controller):
@@ -948,6 +1016,8 @@ if __name__ == "__main__":
         fileMenu.add_command(label="Opcje", command=lambda: Options(window.container, window))
         fileMenu.add_command(label="Importuj konfigurację", command=lambda: window.import_config())
         fileMenu.add_command(label="Eksportuj konfigurację", command=lambda: window.export_config())
+        fileMenu.add_separator()
+        fileMenu.add_command(label="Eksportuj dane do CSV", command=lambda: window.export_csv())
         fileMenu.add_separator()
         fileMenu.add_command(label="Zapisz i zamknij", command=lambda: window.on_closing())
         menu.add_cascade(label="Plik", menu=fileMenu)
