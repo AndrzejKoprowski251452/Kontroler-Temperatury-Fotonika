@@ -13,16 +13,59 @@ import sys
 import threading
 import queue
 from collections import deque
+import platform
 
 config = {}
 with open("config.json", 'r') as file:
     config = json.load(file)
 
+def get_available_serial_ports():
+    """Zwraca listę dostępnych portów szeregowych według systemu"""
+    ports = []
+    try:
+        # Automatyczne wykrywanie portów
+        available_ports = serial.tools.list_ports.comports()
+        for port in available_ports:
+            ports.append(port.device)
+    except:
+        pass
+    
+    if not ports:
+        # Domyślne porty według systemu
+        system = platform.system().lower()
+        if 'windows' in system:
+            ports = ['COM1', 'COM2', 'COM3', 'COM4', 'COM5']
+        elif 'linux' in system:
+            ports = ['/dev/ttyUSB0', '/dev/ttyUSB1', '/dev/ttyACM0', '/dev/ttyACM1', '/dev/ttyS0', '/dev/ttyS1']
+        elif 'darwin' in system:  # macOS
+            ports = ['/dev/tty.usbserial', '/dev/tty.usbmodem', '/dev/cu.usbserial', '/dev/cu.usbmodem']
+        else:
+            ports = ['/dev/ttyUSB0', '/dev/ttyACM0']  # Domyślnie Linux
+    
+    return ports if ports else ['brak_portów']
+
+def get_default_serial_port():
+    """Zwraca domyślny port szeregowy według systemu"""
+    system = platform.system().lower()
+    if 'windows' in system:
+        return 'COM4'
+    elif 'linux' in system:
+        # Sprawdź które porty faktycznie istnieją
+        common_linux_ports = ['/dev/ttyUSB0', '/dev/ttyACM0', '/dev/ttyUSB1', '/dev/ttyACM1']
+        for port in common_linux_ports:
+            if os.path.exists(port):
+                return port
+        return '/dev/ttyUSB0'  # Domyślny jeśli nic nie znaleziono
+    elif 'darwin' in system:  # macOS
+        return '/dev/cu.usbserial'
+    else:
+        return '/dev/ttyUSB0'
+
 class SerialCommunicator:
     """Klasa odpowiedzialna za komunikację z urządzeniem w osobnym wątku"""
     
-    def __init__(self, port="COM4", baud_rate=9600):
-        self.port = port
+    def __init__(self, port=None, baud_rate=9600):
+        self.port = port or get_default_serial_port()
         self.baud_rate = baud_rate
         self.connection = None
         self.connected = False
@@ -48,10 +91,24 @@ class SerialCommunicator:
     def connect(self):
         """Nawiązuje połączenie z urządzeniem"""
         try:
+            # Sprawdź czy port istnieje (ważne na Linuxie)
+            if not platform.system().lower().startswith('win') and not os.path.exists(self.port):
+                print(f"Port {self.port} nie istnieje")
+                return False
+                
             self.connection = serial.Serial(self.port, self.baud_rate, timeout=0.5)
             self.connected = True
             print(f"Połączono z urządzeniem na porcie {self.port}")
             return True
+        except serial.SerialException as e:
+            self.connected = False
+            print(f"Błąd połączenia szeregowego z portem {self.port}: {e}")
+            return False
+        except PermissionError as e:
+            self.connected = False
+            print(f"Brak uprawnień do portu {self.port}: {e}")
+            print("Na Linuxie spróbuj: sudo usermod -a -G dialout $USER")
+            return False
         except Exception as e:
             self.connected = False
             print(f"Błąd połączenia z portem {self.port}: {e}")
@@ -211,6 +268,13 @@ class App(Tk):
         self.port_choice = ['1200', '2400', '4800', '9600', '19200', '38400', '57600', '115200']
         self.port = StringVar(self)
         self.port.set(config['port'])
+        
+        # Wykryj dostępne porty szeregowe
+        self.available_ports = get_available_serial_ports()
+        self.serial_port = StringVar(self)
+        current_serial_port = config.get('serial_port', get_default_serial_port())
+        self.serial_port.set(current_serial_port)
+        
         self.tempRange_choice = ['-10 /+50', '-10 /+100', '-100 /+10', '-50 /+50', '+15 /+30', '+30 /+45', '+45 /+60', '-100 /+250']
         self.temp = StringVar(self)
         self.temp.set(config['temp_range'])
@@ -218,7 +282,8 @@ class App(Tk):
         self.graphFold = config['fold']
         
         # Inicjalizacja komunikacji
-        self.communicator = SerialCommunicator(port="COM4", baud_rate=int(self.port.get()))
+        selected_port = self.serial_port.get()
+        self.communicator = SerialCommunicator(port=selected_port, baud_rate=int(self.port.get()))
         self.connected = self.communicator.connect()
         
         # GUI
@@ -668,46 +733,60 @@ class Options(Toplevel):
         self.controller = controller
         self.title("Opcje")
         
-        Label(self, text="Port:").grid(row=0, column=0)
-        Label(self, text="Zakres temperatur:").grid(row=0, column=1)
+        Label(self, text="Prędkość (baud):").grid(row=0, column=0)
+        Label(self, text="Port szeregowy:").grid(row=0, column=1)
+        Label(self, text="Zakres temperatur:").grid(row=0, column=2)
         
         self.portMenu = OptionMenu(self, controller.port, *controller.port_choice)
         self.portMenu.grid(row=1, column=0)
+        
+        # Menu wyboru portu szeregowego
+        self.serialPortMenu = OptionMenu(self, controller.serial_port, *controller.available_ports)
+        self.serialPortMenu.grid(row=1, column=1)
+        
+        # Przycisk odświeżenia portów
+        self.refresh_ports_btn = Button(self, text="Odśwież porty", command=self.refresh_ports)
+        self.refresh_ports_btn.grid(row=2, column=1)
 
         self.tempMenu = OptionMenu(self, controller.temp, *controller.tempRange_choice)
-        self.tempMenu.grid(row=1, column=1)
+        self.tempMenu.grid(row=1, column=2)
         
         self.v = IntVar()
         self.v.set(self.controller.graphFold)
         self.fold = Checkbutton(self, variable=self.v, onvalue=True, offvalue=False, command=self.change)
-        self.fold.grid(row=3, column=1, sticky='w')
-        Label(self, text='Ciągły wykres').grid(row=3, column=0)
+        self.fold.grid(row=4, column=1, sticky='w')
+        Label(self, text='Ciągły wykres').grid(row=4, column=0)
         
         # Suwaki PID
         self.p = Scale(self, from_=0, to=20, orient=HORIZONTAL, resolution=0.1)
         self.p.set(self.controller.v[0])
-        self.p.grid(row=4, column=0)
-        Label(self, text='Współczynnik P').grid(row=4, column=1, sticky='w')
+        self.p.grid(row=5, column=0)
+        Label(self, text='Współczynnik P').grid(row=5, column=1, sticky='w')
         
         self.i = Scale(self, from_=0, to=20, orient=HORIZONTAL, resolution=0.1)
         self.i.set(self.controller.v[1])
-        self.i.grid(row=5, column=0)
-        Label(self, text='Współczynnik I').grid(row=5, column=1, sticky='w')
+        self.i.grid(row=6, column=0)
+        Label(self, text='Współczynnik I').grid(row=6, column=1, sticky='w')
         
         self.d = Scale(self, from_=0, to=20, orient=HORIZONTAL, resolution=0.1)
         self.d.set(self.controller.v[2])
-        self.d.grid(row=6, column=0)
-        Label(self, text='Współczynnik D').grid(row=6, column=1, sticky='w')
+        self.d.grid(row=7, column=0)
+        Label(self, text='Współczynnik D').grid(row=7, column=1, sticky='w')
         
         # Przycisk zapisu
         self.save = Button(self, text='Zapisz', command=self.Save)
-        self.save.grid(row=7, columnspan=2)
+        self.save.grid(row=8, columnspan=3)
         
-        # Status połączenia
+        # Status połączenia i informacje o systemie
+        system_info = f"System: {platform.system()}"
         status_text = "Połączony" if self.controller.connected else "Rozłączony"
         status_color = "green" if self.controller.connected else "red"
+        
+        self.system_label = Label(self, text=system_info)
+        self.system_label.grid(row=9, columnspan=3)
+        
         self.status_label = Label(self, text=f"Status: {status_text}", fg=status_color)
-        self.status_label.grid(row=8, columnspan=2)
+        self.status_label.grid(row=10, columnspan=3)
 
         for widget in self.winfo_children():
             widget.grid_configure(padx=5, pady=2)
@@ -716,6 +795,27 @@ class Options(Toplevel):
         """Zmienia ustawienie ciągłego wykresu"""
         self.controller.graphFold = bool(self.v.get())
         config['fold'] = bool(self.v.get())
+    
+    def refresh_ports(self):
+        """Odświeża listę dostępnych portów szeregowych"""
+        try:
+            # Pobierz nową listę portów
+            new_ports = get_available_serial_ports()
+            self.controller.available_ports = new_ports
+            
+            # Usuń stare menu
+            self.serialPortMenu.destroy()
+            
+            # Utwórz nowe menu
+            self.serialPortMenu = OptionMenu(self, self.controller.serial_port, *new_ports)
+            self.serialPortMenu.grid(row=1, column=1)
+            
+            print(f"Odświeżono porty: {new_ports}")
+            messagebox.showinfo("Porty", f"Znaleziono porty: {', '.join(new_ports)}")
+            
+        except Exception as e:
+            print(f"Błąd odświeżania portów: {e}")
+            messagebox.showerror("Błąd", f"Nie udało się odświeżyć portów: {e}")
         
     def Save(self):
         """Zapisuje ustawienia"""
@@ -728,6 +828,7 @@ class Options(Toplevel):
             self.controller.v = [self.p.get(), self.i.get(), self.d.get()]
             config['pid'] = self.controller.v
             config['port'] = self.controller.port.get()
+            config['serial_port'] = self.controller.serial_port.get()
             config['temp_range'] = self.controller.temp.get()
             config['fold'] = self.controller.graphFold
             
@@ -758,12 +859,61 @@ class StreamToFunction:
         pass
 
 if __name__ == "__main__":
+    def check_dependencies():
+        """Sprawdza czy wszystkie wymagane biblioteki są zainstalowane"""
+        missing = []
+        
+        try:
+            import tkinter
+        except ImportError:
+            missing.append("tkinter")
+        
+        try:
+            import matplotlib
+        except ImportError:
+            missing.append("matplotlib")
+        
+        try:
+            import serial
+        except ImportError:
+            missing.append("pyserial")
+            
+        try:
+            import numpy
+        except ImportError:
+            missing.append("numpy")
+        
+        if missing:
+            error_msg = f"Brakuje wymaganych bibliotek: {', '.join(missing)}\n\n"
+            if platform.system().lower() == 'linux':
+                error_msg += "Zainstaluj używając:\n"
+                error_msg += f"pip install {' '.join(missing)}\n\n"
+                error_msg += "Lub na Ubuntu/Debian:\n"
+                error_msg += "sudo apt-get install python3-tk python3-matplotlib python3-serial python3-numpy\n\n"
+                error_msg += "Może też być potrzebne dodanie użytkownika do grupy dialout:\n"
+                error_msg += "sudo usermod -a -G dialout $USER\n"
+                error_msg += "Następnie wyloguj się i zaloguj ponownie."
+            else:
+                error_msg += f"Zainstaluj używając: pip install {' '.join(missing)}"
+            
+            print(error_msg)
+            try:
+                messagebox.showerror("Brakuje zależności", error_msg)
+            except:
+                pass
+            return False
+        return True
+    
+    if not check_dependencies():
+        sys.exit(1)
+    
     try:
         # Sprawdzenie pliku konfiguracyjnego
         if not os.path.exists("config.json"):
             print("Brak pliku config.json - tworzenie domyślnego")
             default_config = {
                 "port": "9600",
+                "serial_port": get_default_serial_port(),
                 "temp_range": "-10 /+50", 
                 "fold": True,
                 "pid": [6, 7, 4],
